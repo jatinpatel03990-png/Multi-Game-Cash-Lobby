@@ -3,13 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API for the Cash Game Lobby prototype.
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Player account and session operations
+  - name: lobby
+    description: Game lobby and match operations
+  - name: wallet
+    description: Manual deposit and withdrawal requests
+  - name: admin
+    description: Operations review
 paths:
   /healthz:
     get:
@@ -24,6 +32,244 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/session:
+    get:
+      operationId: getSession
+      tags: [auth]
+      summary: Get the current player session
+      responses:
+        "200":
+          description: Session state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+  /auth/signup:
+    post:
+      operationId: signUp
+      tags: [auth]
+      summary: Create a player account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignUpInput"
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          description: Invalid signup data
+        "409":
+          description: Email already registered
+  /auth/login:
+    post:
+      operationId: signIn
+      tags: [auth]
+      summary: Sign in to a player account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignInInput"
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          description: Invalid credentials
+  /auth/logout:
+    post:
+      operationId: signOut
+      tags: [auth]
+      summary: End the current session
+      responses:
+        "200":
+          description: Session ended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+  /lobby:
+    get:
+      operationId: getLobby
+      tags: [lobby]
+      summary: Get wallet, available games, and recent activity
+      responses:
+        "200":
+          description: Lobby data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LobbyResponse"
+        "401":
+          description: Sign in required
+  /matches:
+    post:
+      operationId: startMatch
+      tags: [lobby]
+      summary: Pay the entry fee and start a simulated match
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MatchStartInput"
+      responses:
+        "201":
+          description: Match created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Match"
+        "400":
+          description: Invalid game or insufficient eligible balances
+        "401":
+          description: Sign in required
+  /matches/{matchId}/finish:
+    post:
+      operationId: finishMatch
+      tags: [lobby]
+      summary: Record the simulated match result and settle the prize
+      parameters:
+        - name: matchId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MatchFinishInput"
+      responses:
+        "200":
+          description: Match settled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Match"
+        "404":
+          description: Match not found
+        "409":
+          description: Match already settled
+  /wallet/deposits:
+    post:
+      operationId: createDeposit
+      tags: [wallet]
+      summary: Submit a manual deposit request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepositInput"
+      responses:
+        "201":
+          description: Deposit request submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "400":
+          description: Invalid deposit request
+        "401":
+          description: Sign in required
+  /wallet/withdrawals:
+    post:
+      operationId: createWithdrawal
+      tags: [wallet]
+      summary: Submit a manual withdrawal request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawalInput"
+      responses:
+        "201":
+          description: Withdrawal request submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "400":
+          description: Invalid amount or insufficient winning balance
+        "401":
+          description: Sign in required
+  /admin/dashboard:
+    get:
+      operationId: getAdminDashboard
+      tags: [admin]
+      summary: Get operations statistics and pending requests
+      responses:
+        "200":
+          description: Operations dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDashboard"
+        "403":
+          description: Admin access required
+  /admin/deposits/{transactionId}/decision:
+    post:
+      operationId: decideDeposit
+      tags: [admin]
+      summary: Approve or reject a pending deposit
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepositDecisionInput"
+      responses:
+        "200":
+          description: Deposit request updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "403":
+          description: Admin access required
+        "404":
+          description: Pending deposit not found
+  /admin/withdrawals/{transactionId}/complete:
+    post:
+      operationId: completeWithdrawal
+      tags: [admin]
+      summary: Mark a pending withdrawal as manually paid
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Withdrawal archived as complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "403":
+          description: Admin access required
+        "404":
+          description: Pending withdrawal not found
 components:
   schemas:
     HealthStatus:
@@ -33,4 +279,227 @@ components:
           type: string
       required:
         - status
+    SuccessResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+    Player:
+      type: object
+      required: [id, email, displayName, role]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [player, admin]
+    Wallet:
+      type: object
+      required: [depositBalance, winningBalance, bonusBalance]
+      properties:
+        depositBalance:
+          type: number
+        winningBalance:
+          type: number
+        bonusBalance:
+          type: number
+    SessionResponse:
+      type: object
+      required: [user, wallet]
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/Player"
+            - type: "null"
+        wallet:
+          oneOf:
+            - $ref: "#/components/schemas/Wallet"
+            - type: "null"
+    SignUpInput:
+      type: object
+      required: [email, displayName, password]
+      properties:
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 40
+        password:
+          type: string
+          minLength: 10
+          maxLength: 128
+    SignInInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+    Game:
+      type: object
+      required: [id, name, description, players, entryFee, prize]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        players:
+          type: string
+        entryFee:
+          type: number
+        prize:
+          type: number
+    Transaction:
+      type: object
+      required: [id, userId, userName, type, status, amount, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        type:
+          type: string
+          enum: [deposit, withdrawal]
+        status:
+          type: string
+          enum: [pending, approved, rejected, completed]
+        amount:
+          type: number
+        utr:
+          type: [string, "null"]
+        upiId:
+          type: [string, "null"]
+        screenshotDataUrl:
+          type: [string, "null"]
+        tax:
+          type: number
+        payout:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+    Match:
+      type: object
+      required: [id, gameId, gameName, status, entryFee, prize, opponentName, createdAt]
+      properties:
+        id:
+          type: string
+        gameId:
+          type: string
+        gameName:
+          type: string
+        status:
+          type: string
+          enum: [active, won, lost]
+        entryFee:
+          type: number
+        prize:
+          type: number
+        opponentName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    MatchStartInput:
+      type: object
+      required: [gameId]
+      properties:
+        gameId:
+          type: string
+          enum: [snake, clicker, tic-tac-toe]
+    MatchFinishInput:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: string
+          enum: [won, lost]
+    DepositInput:
+      type: object
+      required: [amount, utr, screenshotDataUrl]
+      properties:
+        amount:
+          type: number
+          minimum: 1
+          maximum: 100000
+        utr:
+          type: string
+          minLength: 6
+          maxLength: 64
+        screenshotDataUrl:
+          type: string
+          maxLength: 3000000
+    WithdrawalInput:
+      type: object
+      required: [amount, upiId]
+      properties:
+        amount:
+          type: number
+          minimum: 1
+          maximum: 100000
+        upiId:
+          type: string
+          minLength: 5
+          maxLength: 128
+    DepositDecisionInput:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approve, reject]
+    LobbyResponse:
+      type: object
+      required: [user, wallet, games, transactions, matches]
+      properties:
+        user:
+          $ref: "#/components/schemas/Player"
+        wallet:
+          $ref: "#/components/schemas/Wallet"
+        games:
+          type: array
+          items:
+            $ref: "#/components/schemas/Game"
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/Match"
+    AdminDashboard:
+      type: object
+      required: [totalGameRake, totalWithdrawalTaxes, pendingCount, deposits, withdrawals]
+      properties:
+        totalGameRake:
+          type: number
+        totalWithdrawalTaxes:
+          type: number
+        pendingCount:
+          type: integer
+        deposits:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        withdrawals:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
 

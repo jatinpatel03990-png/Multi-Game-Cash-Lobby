@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Cash Game Lobby"
+description = "A mobile-responsive multi-game lobby with player accounts, three wallet balances, manual deposit and withdrawal requests, match entry, and an operations dashboard."
+version = "1.0.0"
+id = "artifacts/cash-game-lobby"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22724
+
+[services.development]
+run = "pnpm --filter @workspace/cash-game-lobby run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/cash-game-lobby", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/cash-game-lobby/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22724"
+BASE_PATH = "/"
