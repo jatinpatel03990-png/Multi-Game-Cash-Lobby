@@ -6,11 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type MatchStatus = typeof MatchStatus[keyof typeof MatchStatus];
+export type RoomStatus = typeof RoomStatus[keyof typeof RoomStatus];
 
 
-export const MatchStatus = {
+export const RoomStatus = {
+  waiting: 'waiting',
   active: 'active',
-  won: 'won',
-  lost: 'lost',
+  finished: 'finished',
 } as const;

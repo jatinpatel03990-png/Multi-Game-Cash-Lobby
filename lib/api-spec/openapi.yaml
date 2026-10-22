@@ -13,18 +13,17 @@ tags:
   - name: auth
     description: Player account and session operations
   - name: lobby
-    description: Game lobby and match operations
+    description: Game lobby and real-player matchmaking
   - name: wallet
     description: Manual deposit and withdrawal requests
   - name: admin
-    description: Operations review
+    description: Operations review and system configuration
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -102,7 +101,7 @@ paths:
     get:
       operationId: getLobby
       tags: [lobby]
-      summary: Get wallet, available games, and recent activity
+      summary: Get the unified wallet, games, room options, and account activity
       responses:
         "200":
           description: Lobby data
@@ -112,35 +111,81 @@ paths:
                 $ref: "#/components/schemas/LobbyResponse"
         "401":
           description: Sign in required
-  /matches:
+  /rooms/join:
     post:
-      operationId: startMatch
+      operationId: joinRoom
       tags: [lobby]
-      summary: Pay the entry fee and start a simulated match
+      summary: Join or create a real-player matchmaking queue
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/MatchStartInput"
+              $ref: "#/components/schemas/RoomJoinInput"
       responses:
-        "201":
-          description: Match created
+        "200":
+          description: Joined an existing queue
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Match"
+                $ref: "#/components/schemas/Room"
+        "201":
+          description: Created a queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
         "400":
-          description: Invalid game or insufficient eligible balances
+          description: Invalid room choice or insufficient total money
         "401":
           description: Sign in required
-  /matches/{matchId}/finish:
-    post:
-      operationId: finishMatch
+  /rooms/{roomId}:
+    get:
+      operationId: getRoom
       tags: [lobby]
-      summary: Record the simulated match result and settle the prize
+      summary: Get queue or match status
       parameters:
-        - name: matchId
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current room state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "404":
+          description: Room not found
+  /rooms/{roomId}/leave:
+    post:
+      operationId: leaveRoom
+      tags: [lobby]
+      summary: Leave a waiting queue and refund its entry fee
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Queue left
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "409":
+          description: Match already started
+  /rooms/{roomId}/score:
+    post:
+      operationId: submitRoomScore
+      tags: [lobby]
+      summary: Submit a completed game score
+      parameters:
+        - name: roomId
           in: path
           required: true
           schema:
@@ -150,18 +195,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/MatchFinishInput"
+              $ref: "#/components/schemas/RoomScoreInput"
       responses:
         "200":
-          description: Match settled
+          description: Score recorded or room settled
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Match"
-        "404":
-          description: Match not found
+                $ref: "#/components/schemas/Room"
         "409":
-          description: Match already settled
+          description: Room is not accepting scores
   /wallet/deposits:
     post:
       operationId: createDeposit
@@ -181,7 +224,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Transaction"
         "400":
-          description: Invalid deposit request
+          description: Invalid deposit request or amount limits not met
         "401":
           description: Sign in required
   /wallet/withdrawals:
@@ -203,14 +246,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/Transaction"
         "400":
-          description: Invalid amount or insufficient winning balance
+          description: Amount limits or available balance not met
         "401":
           description: Sign in required
   /admin/dashboard:
     get:
       operationId: getAdminDashboard
       tags: [admin]
-      summary: Get operations statistics and pending requests
+      summary: Get revenue streams, system settings, and pending requests
       responses:
         "200":
           description: Operations dashboard
@@ -218,6 +261,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminDashboard"
+        "403":
+          description: Admin access required
+  /admin/settings:
+    patch:
+      operationId: updateAdminSettings
+      tags: [admin]
+      summary: Update the public deposit UPI details and QR image URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSettingsInput"
+      responses:
+        "200":
+          description: Settings saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSettings"
         "403":
           description: Admin access required
   /admin/deposits/{transactionId}/decision:
@@ -261,7 +324,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Withdrawal archived as complete
+          description: Withdrawal marked complete
           content:
             application/json:
               schema:
@@ -277,8 +340,7 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
     SuccessResponse:
       type: object
       required: [success]
@@ -289,26 +351,15 @@ components:
       type: object
       required: [id, email, displayName, role]
       properties:
-        id:
-          type: string
-        email:
-          type: string
-          format: email
-        displayName:
-          type: string
-        role:
-          type: string
-          enum: [player, admin]
+        id: { type: string }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        role: { type: string, enum: [player, admin] }
     Wallet:
       type: object
-      required: [depositBalance, winningBalance, bonusBalance]
+      required: [totalMoney]
       properties:
-        depositBalance:
-          type: number
-        winningBalance:
-          type: number
-        bonusBalance:
-          type: number
+        totalMoney: { type: number, minimum: 0 }
     SessionResponse:
       type: object
       required: [user, wallet]
@@ -325,181 +376,151 @@ components:
       type: object
       required: [email, displayName, password]
       properties:
-        email:
-          type: string
-          format: email
-        displayName:
-          type: string
-          minLength: 2
-          maxLength: 40
-        password:
-          type: string
-          minLength: 10
-          maxLength: 128
+        email: { type: string, format: email }
+        displayName: { type: string, minLength: 2, maxLength: 40 }
+        password: { type: string, minLength: 10, maxLength: 128 }
     SignInInput:
       type: object
       required: [email, password]
       properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          minLength: 1
-          maxLength: 128
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1, maxLength: 128 }
     Game:
       type: object
-      required: [id, name, description, players, entryFee, prize]
+      required: [id, name, description]
       properties:
-        id:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+    RoomOption:
+      type: object
+      required: [id, title, playerCount, entryFee, prize, adminKeeps]
+      properties:
+        id: { type: string, enum: ["duo20", "duo50", "quad20", "quad50"] }
+        title: { type: string }
+        playerCount: { type: integer, enum: [2, 4] }
+        entryFee: { type: number }
+        prize: { type: number }
+        adminKeeps: { type: number }
+    RoomPlayer:
+      type: object
+      required: [userId, displayName, hasSubmittedScore]
+      properties:
+        userId: { type: string }
+        displayName: { type: string }
+        hasSubmittedScore: { type: boolean }
+    Room:
+      type: object
+      required: [id, gameId, gameName, optionId, entryFee, playerCount, requiredSlots, prize, status, players, createdAt, userSubmittedScore]
+      properties:
+        id: { type: string }
+        gameId: { type: string }
+        gameName: { type: string }
+        optionId: { type: string, enum: ["duo20", "duo50", "quad20", "quad50"] }
+        entryFee: { type: number }
+        playerCount: { type: integer }
+        requiredSlots: { type: integer }
+        prize: { type: number }
+        status: { type: string, enum: [waiting, active, finished] }
+        winnerName: { type: ["string", "null"] }
         players:
-          type: string
-        entryFee:
-          type: number
-        prize:
-          type: number
+          type: array
+          items: { $ref: "#/components/schemas/RoomPlayer" }
+        createdAt: { type: string, format: date-time }
+        userSubmittedScore: { type: boolean }
+    RoomJoinInput:
+      type: object
+      required: [gameId, optionId]
+      properties:
+        gameId: { type: string, enum: [snake, clicker, tic-tac-toe] }
+        optionId: { type: string, enum: ["duo20", "duo50", "quad20", "quad50"] }
+    RoomScoreInput:
+      type: object
+      required: [score]
+      properties:
+        score: { type: integer, minimum: 0, maximum: 100000 }
     Transaction:
       type: object
-      required: [id, userId, userName, type, status, amount, createdAt]
+      required: [id, userId, userName, type, status, amount, tax, payout, createdAt]
       properties:
-        id:
-          type: string
-        userId:
-          type: string
-        userName:
-          type: string
-        type:
-          type: string
-          enum: [deposit, withdrawal]
-        status:
-          type: string
-          enum: [pending, approved, rejected, completed]
-        amount:
-          type: number
-        utr:
-          type: [string, "null"]
-        upiId:
-          type: [string, "null"]
-        screenshotDataUrl:
-          type: [string, "null"]
-        tax:
-          type: number
-        payout:
-          type: number
-        createdAt:
-          type: string
-          format: date-time
-    Match:
-      type: object
-      required: [id, gameId, gameName, status, entryFee, prize, opponentName, createdAt]
-      properties:
-        id:
-          type: string
-        gameId:
-          type: string
-        gameName:
-          type: string
-        status:
-          type: string
-          enum: [active, won, lost]
-        entryFee:
-          type: number
-        prize:
-          type: number
-        opponentName:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-    MatchStartInput:
-      type: object
-      required: [gameId]
-      properties:
-        gameId:
-          type: string
-          enum: [snake, clicker, tic-tac-toe]
-    MatchFinishInput:
-      type: object
-      required: [result]
-      properties:
-        result:
-          type: string
-          enum: [won, lost]
+        id: { type: string }
+        userId: { type: string }
+        userName: { type: string }
+        type: { type: string, enum: [deposit, withdrawal] }
+        status: { type: string, enum: [pending, approved, rejected, completed] }
+        amount: { type: number }
+        utr: { type: ["string", "null"] }
+        upiId: { type: ["string", "null"] }
+        screenshotDataUrl: { type: ["string", "null"] }
+        tax: { type: number }
+        payout: { type: number }
+        createdAt: { type: string, format: date-time }
     DepositInput:
       type: object
       required: [amount, utr, screenshotDataUrl]
       properties:
-        amount:
-          type: number
-          minimum: 1
-          maximum: 100000
-        utr:
-          type: string
-          minLength: 6
-          maxLength: 64
-        screenshotDataUrl:
-          type: string
-          maxLength: 3000000
+        amount: { type: number, minimum: 50, maximum: 500, multipleOf: 0.01 }
+        utr: { type: string, minLength: 6, maxLength: 64 }
+        screenshotDataUrl: { type: string, maxLength: 3000000 }
     WithdrawalInput:
       type: object
       required: [amount, upiId]
       properties:
-        amount:
-          type: number
-          minimum: 1
-          maximum: 100000
-        upiId:
-          type: string
-          minLength: 5
-          maxLength: 128
+        amount: { type: number, minimum: 70, maximum: 1000, multipleOf: 0.01 }
+        upiId: { type: string, minLength: 5, maxLength: 128 }
     DepositDecisionInput:
       type: object
       required: [decision]
       properties:
-        decision:
-          type: string
-          enum: [approve, reject]
+        decision: { type: string, enum: [approve, reject] }
+    AdminSettings:
+      type: object
+      required: [adminUpiId, adminQrCodeUrl]
+      properties:
+        adminUpiId: { type: string }
+        adminQrCodeUrl: { type: string }
+    AdminSettingsInput:
+      type: object
+      required: [adminUpiId, adminQrCodeUrl]
+      properties:
+        adminUpiId: { type: string, minLength: 5, maxLength: 128 }
+        adminQrCodeUrl: { type: string, minLength: 1, maxLength: 2048 }
     LobbyResponse:
       type: object
-      required: [user, wallet, games, transactions, matches]
+      required: [user, wallet, games, roomOptions, activeRoom, transactions, settings]
       properties:
-        user:
-          $ref: "#/components/schemas/Player"
-        wallet:
-          $ref: "#/components/schemas/Wallet"
+        user: { $ref: "#/components/schemas/Player" }
+        wallet: { $ref: "#/components/schemas/Wallet" }
         games:
           type: array
-          items:
-            $ref: "#/components/schemas/Game"
+          items: { $ref: "#/components/schemas/Game" }
+        roomOptions:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { $ref: "#/components/schemas/RoomOption" }
+        activeRoom:
+          oneOf:
+            - $ref: "#/components/schemas/Room"
+            - type: "null"
         transactions:
           type: array
-          items:
-            $ref: "#/components/schemas/Transaction"
-        matches:
-          type: array
-          items:
-            $ref: "#/components/schemas/Match"
+          items: { $ref: "#/components/schemas/Transaction" }
+        settings: { $ref: "#/components/schemas/AdminSettings" }
     AdminDashboard:
       type: object
-      required: [totalGameRake, totalWithdrawalTaxes, pendingCount, deposits, withdrawals]
+      required: [rake20Player2, rake50Player2, rake20Player4, rake50Player4, totalWithdrawalTax, pendingCount, deposits, withdrawals, settings]
       properties:
-        totalGameRake:
-          type: number
-        totalWithdrawalTaxes:
-          type: number
-        pendingCount:
-          type: integer
+        rake20Player2: { type: number }
+        rake50Player2: { type: number }
+        rake20Player4: { type: number }
+        rake50Player4: { type: number }
+        totalWithdrawalTax: { type: number }
+        pendingCount: { type: integer }
         deposits:
           type: array
-          items:
-            $ref: "#/components/schemas/Transaction"
+          items: { $ref: "#/components/schemas/Transaction" }
         withdrawals:
           type: array
-          items:
-            $ref: "#/components/schemas/Transaction"
-
+          items: { $ref: "#/components/schemas/Transaction" }
+        settings: { $ref: "#/components/schemas/AdminSettings" }

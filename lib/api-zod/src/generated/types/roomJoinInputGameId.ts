@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type MatchStartInputGameId = typeof MatchStartInputGameId[keyof typeof MatchStartInputGameId];
+export type RoomJoinInputGameId = typeof RoomJoinInputGameId[keyof typeof RoomJoinInputGameId];
 
 
-export const MatchStartInputGameId = {
+export const RoomJoinInputGameId = {
   snake: 'snake',
   clicker: 'clicker',
   'tic-tac-toe': 'tic-tac-toe',

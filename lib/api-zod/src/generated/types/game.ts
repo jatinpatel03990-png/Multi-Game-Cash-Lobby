@@ -10,7 +10,4 @@ export interface Game {
   id: string;
   name: string;
   description: string;
-  players: string;
-  entryFee: number;
-  prize: number;
 }

@@ -9,7 +9,6 @@ import * as zod from 'zod';
 
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -20,6 +19,10 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary Get the current player session
  */
+export const getSessionResponseWalletOneTotalMoneyMin = 0;
+
+
+
 export const GetSessionResponse = zod.object({
   "user": zod.union([zod.object({
   "id": zod.string(),
@@ -28,9 +31,7 @@ export const GetSessionResponse = zod.object({
   "role": zod.enum(['player', 'admin'])
 }),zod.null()]),
   "wallet": zod.union([zod.object({
-  "depositBalance": zod.number(),
-  "winningBalance": zod.number(),
-  "bonusBalance": zod.number()
+  "totalMoney": zod.number().min(getSessionResponseWalletOneTotalMoneyMin)
 }),zod.null()])
 })
 
@@ -52,6 +53,10 @@ export const SignUpBody = zod.object({
   "password": zod.string().min(signUpBodyPasswordMin).max(signUpBodyPasswordMax)
 })
 
+export const signUpResponseWalletOneTotalMoneyMin = 0;
+
+
+
 export const SignUpResponse = zod.object({
   "user": zod.union([zod.object({
   "id": zod.string(),
@@ -60,9 +65,7 @@ export const SignUpResponse = zod.object({
   "role": zod.enum(['player', 'admin'])
 }),zod.null()]),
   "wallet": zod.union([zod.object({
-  "depositBalance": zod.number(),
-  "winningBalance": zod.number(),
-  "bonusBalance": zod.number()
+  "totalMoney": zod.number().min(signUpResponseWalletOneTotalMoneyMin)
 }),zod.null()])
 })
 
@@ -79,6 +82,10 @@ export const SignInBody = zod.object({
   "password": zod.string().min(1).max(signInBodyPasswordMax)
 })
 
+export const signInResponseWalletOneTotalMoneyMin = 0;
+
+
+
 export const SignInResponse = zod.object({
   "user": zod.union([zod.object({
   "id": zod.string(),
@@ -87,9 +94,7 @@ export const SignInResponse = zod.object({
   "role": zod.enum(['player', 'admin'])
 }),zod.null()]),
   "wallet": zod.union([zod.object({
-  "depositBalance": zod.number(),
-  "winningBalance": zod.number(),
-  "bonusBalance": zod.number()
+  "totalMoney": zod.number().min(signInResponseWalletOneTotalMoneyMin)
 }),zod.null()])
 })
 
@@ -103,8 +108,15 @@ export const SignOutResponse = zod.object({
 
 
 /**
- * @summary Get wallet, available games, and recent activity
+ * @summary Get the unified wallet, games, room options, and account activity
  */
+export const getLobbyResponseWalletTotalMoneyMin = 0;
+
+export const getLobbyResponseRoomOptionsMin = 4;
+export const getLobbyResponseRoomOptionsMax = 4;
+
+
+
 export const GetLobbyResponse = zod.object({
   "user": zod.object({
   "id": zod.string(),
@@ -113,18 +125,40 @@ export const GetLobbyResponse = zod.object({
   "role": zod.enum(['player', 'admin'])
 }),
   "wallet": zod.object({
-  "depositBalance": zod.number(),
-  "winningBalance": zod.number(),
-  "bonusBalance": zod.number()
+  "totalMoney": zod.number().min(getLobbyResponseWalletTotalMoneyMin)
 }),
   "games": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "description": zod.string(),
-  "players": zod.string(),
-  "entryFee": zod.number(),
-  "prize": zod.number()
+  "description": zod.string()
 })),
+  "roomOptions": zod.array(zod.object({
+  "id": zod.enum(['duo20', 'duo50', 'quad20', 'quad50']),
+  "title": zod.string(),
+  "playerCount": zod.union([zod.literal(2),zod.literal(4)]),
+  "entryFee": zod.number(),
+  "prize": zod.number(),
+  "adminKeeps": zod.number()
+})).min(getLobbyResponseRoomOptionsMin).max(getLobbyResponseRoomOptionsMax),
+  "activeRoom": zod.union([zod.object({
+  "id": zod.string(),
+  "gameId": zod.string(),
+  "gameName": zod.string(),
+  "optionId": zod.enum(['duo20', 'duo50', 'quad20', 'quad50']),
+  "entryFee": zod.number(),
+  "playerCount": zod.number().int(),
+  "requiredSlots": zod.number().int(),
+  "prize": zod.number(),
+  "status": zod.enum(['waiting', 'active', 'finished']),
+  "winnerName": zod.string().nullish(),
+  "players": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "hasSubmittedScore": zod.boolean()
+})),
+  "createdAt": zod.coerce.date(),
+  "userSubmittedScore": zod.boolean()
+}),zod.null()]),
   "transactions": zod.array(zod.object({
   "id": zod.string(),
   "userId": zod.string(),
@@ -135,69 +169,129 @@ export const GetLobbyResponse = zod.object({
   "utr": zod.string().nullish(),
   "upiId": zod.string().nullish(),
   "screenshotDataUrl": zod.string().nullish(),
-  "tax": zod.number().optional(),
-  "payout": zod.number().optional(),
+  "tax": zod.number(),
+  "payout": zod.number(),
   "createdAt": zod.coerce.date()
 })),
-  "matches": zod.array(zod.object({
-  "id": zod.string(),
-  "gameId": zod.string(),
-  "gameName": zod.string(),
-  "status": zod.enum(['active', 'won', 'lost']),
-  "entryFee": zod.number(),
-  "prize": zod.number(),
-  "opponentName": zod.string(),
-  "createdAt": zod.coerce.date()
-}))
+  "settings": zod.object({
+  "adminUpiId": zod.string(),
+  "adminQrCodeUrl": zod.string()
+})
 })
 
 
 /**
- * @summary Pay the entry fee and start a simulated match
+ * @summary Join or create a real-player matchmaking queue
  */
-export const StartMatchBody = zod.object({
-  "gameId": zod.enum(['snake', 'clicker', 'tic-tac-toe'])
+export const JoinRoomBody = zod.object({
+  "gameId": zod.enum(['snake', 'clicker', 'tic-tac-toe']),
+  "optionId": zod.enum(['duo20', 'duo50', 'quad20', 'quad50'])
 })
 
-export const StartMatchResponse = zod.object({
+export const JoinRoomResponse = zod.object({
   "id": zod.string(),
   "gameId": zod.string(),
   "gameName": zod.string(),
-  "status": zod.enum(['active', 'won', 'lost']),
+  "optionId": zod.enum(['duo20', 'duo50', 'quad20', 'quad50']),
   "entryFee": zod.number(),
+  "playerCount": zod.number().int(),
+  "requiredSlots": zod.number().int(),
   "prize": zod.number(),
-  "opponentName": zod.string(),
-  "createdAt": zod.coerce.date()
+  "status": zod.enum(['waiting', 'active', 'finished']),
+  "winnerName": zod.string().nullish(),
+  "players": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "hasSubmittedScore": zod.boolean()
+})),
+  "createdAt": zod.coerce.date(),
+  "userSubmittedScore": zod.boolean()
 })
 
 
 /**
- * @summary Record the simulated match result and settle the prize
+ * @summary Get queue or match status
  */
-export const FinishMatchParams = zod.object({
-  "matchId": zod.coerce.string()
+export const GetRoomParams = zod.object({
+  "roomId": zod.coerce.string()
 })
 
-export const FinishMatchBody = zod.object({
-  "result": zod.enum(['won', 'lost'])
-})
-
-export const FinishMatchResponse = zod.object({
+export const GetRoomResponse = zod.object({
   "id": zod.string(),
   "gameId": zod.string(),
   "gameName": zod.string(),
-  "status": zod.enum(['active', 'won', 'lost']),
+  "optionId": zod.enum(['duo20', 'duo50', 'quad20', 'quad50']),
   "entryFee": zod.number(),
+  "playerCount": zod.number().int(),
+  "requiredSlots": zod.number().int(),
   "prize": zod.number(),
-  "opponentName": zod.string(),
-  "createdAt": zod.coerce.date()
+  "status": zod.enum(['waiting', 'active', 'finished']),
+  "winnerName": zod.string().nullish(),
+  "players": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "hasSubmittedScore": zod.boolean()
+})),
+  "createdAt": zod.coerce.date(),
+  "userSubmittedScore": zod.boolean()
+})
+
+
+/**
+ * @summary Leave a waiting queue and refund its entry fee
+ */
+export const LeaveRoomParams = zod.object({
+  "roomId": zod.coerce.string()
+})
+
+export const LeaveRoomResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary Submit a completed game score
+ */
+export const SubmitRoomScoreParams = zod.object({
+  "roomId": zod.coerce.string()
+})
+
+export const submitRoomScoreBodyScoreMin = 0;
+export const submitRoomScoreBodyScoreMax = 100000;
+
+
+
+export const SubmitRoomScoreBody = zod.object({
+  "score": zod.number().int().min(submitRoomScoreBodyScoreMin).max(submitRoomScoreBodyScoreMax)
+})
+
+export const SubmitRoomScoreResponse = zod.object({
+  "id": zod.string(),
+  "gameId": zod.string(),
+  "gameName": zod.string(),
+  "optionId": zod.enum(['duo20', 'duo50', 'quad20', 'quad50']),
+  "entryFee": zod.number(),
+  "playerCount": zod.number().int(),
+  "requiredSlots": zod.number().int(),
+  "prize": zod.number(),
+  "status": zod.enum(['waiting', 'active', 'finished']),
+  "winnerName": zod.string().nullish(),
+  "players": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "hasSubmittedScore": zod.boolean()
+})),
+  "createdAt": zod.coerce.date(),
+  "userSubmittedScore": zod.boolean()
 })
 
 
 /**
  * @summary Submit a manual deposit request
  */
-export const createDepositBodyAmountMax = 100000;
+export const createDepositBodyAmountMin = 50;
+export const createDepositBodyAmountMax = 500;
+export const createDepositBodyAmountMultipleOf = 0.01;
 
 export const createDepositBodyUtrMin = 6;
 export const createDepositBodyUtrMax = 64;
@@ -207,7 +301,7 @@ export const createDepositBodyScreenshotDataUrlMax = 3000000;
 
 
 export const CreateDepositBody = zod.object({
-  "amount": zod.number().min(1).max(createDepositBodyAmountMax),
+  "amount": zod.number().min(createDepositBodyAmountMin).max(createDepositBodyAmountMax).multipleOf(createDepositBodyAmountMultipleOf),
   "utr": zod.string().min(createDepositBodyUtrMin).max(createDepositBodyUtrMax),
   "screenshotDataUrl": zod.string().max(createDepositBodyScreenshotDataUrlMax)
 })
@@ -222,8 +316,8 @@ export const CreateDepositResponse = zod.object({
   "utr": zod.string().nullish(),
   "upiId": zod.string().nullish(),
   "screenshotDataUrl": zod.string().nullish(),
-  "tax": zod.number().optional(),
-  "payout": zod.number().optional(),
+  "tax": zod.number(),
+  "payout": zod.number(),
   "createdAt": zod.coerce.date()
 })
 
@@ -231,7 +325,9 @@ export const CreateDepositResponse = zod.object({
 /**
  * @summary Submit a manual withdrawal request
  */
-export const createWithdrawalBodyAmountMax = 100000;
+export const createWithdrawalBodyAmountMin = 70;
+export const createWithdrawalBodyAmountMax = 1000;
+export const createWithdrawalBodyAmountMultipleOf = 0.01;
 
 export const createWithdrawalBodyUpiIdMin = 5;
 export const createWithdrawalBodyUpiIdMax = 128;
@@ -239,7 +335,7 @@ export const createWithdrawalBodyUpiIdMax = 128;
 
 
 export const CreateWithdrawalBody = zod.object({
-  "amount": zod.number().min(1).max(createWithdrawalBodyAmountMax),
+  "amount": zod.number().min(createWithdrawalBodyAmountMin).max(createWithdrawalBodyAmountMax).multipleOf(createWithdrawalBodyAmountMultipleOf),
   "upiId": zod.string().min(createWithdrawalBodyUpiIdMin).max(createWithdrawalBodyUpiIdMax)
 })
 
@@ -253,18 +349,21 @@ export const CreateWithdrawalResponse = zod.object({
   "utr": zod.string().nullish(),
   "upiId": zod.string().nullish(),
   "screenshotDataUrl": zod.string().nullish(),
-  "tax": zod.number().optional(),
-  "payout": zod.number().optional(),
+  "tax": zod.number(),
+  "payout": zod.number(),
   "createdAt": zod.coerce.date()
 })
 
 
 /**
- * @summary Get operations statistics and pending requests
+ * @summary Get revenue streams, system settings, and pending requests
  */
 export const GetAdminDashboardResponse = zod.object({
-  "totalGameRake": zod.number(),
-  "totalWithdrawalTaxes": zod.number(),
+  "rake20Player2": zod.number(),
+  "rake50Player2": zod.number(),
+  "rake20Player4": zod.number(),
+  "rake50Player4": zod.number(),
+  "totalWithdrawalTax": zod.number(),
   "pendingCount": zod.number().int(),
   "deposits": zod.array(zod.object({
   "id": zod.string(),
@@ -276,8 +375,8 @@ export const GetAdminDashboardResponse = zod.object({
   "utr": zod.string().nullish(),
   "upiId": zod.string().nullish(),
   "screenshotDataUrl": zod.string().nullish(),
-  "tax": zod.number().optional(),
-  "payout": zod.number().optional(),
+  "tax": zod.number(),
+  "payout": zod.number(),
   "createdAt": zod.coerce.date()
 })),
   "withdrawals": zod.array(zod.object({
@@ -290,10 +389,35 @@ export const GetAdminDashboardResponse = zod.object({
   "utr": zod.string().nullish(),
   "upiId": zod.string().nullish(),
   "screenshotDataUrl": zod.string().nullish(),
-  "tax": zod.number().optional(),
-  "payout": zod.number().optional(),
+  "tax": zod.number(),
+  "payout": zod.number(),
   "createdAt": zod.coerce.date()
-}))
+})),
+  "settings": zod.object({
+  "adminUpiId": zod.string(),
+  "adminQrCodeUrl": zod.string()
+})
+})
+
+
+/**
+ * @summary Update the public deposit UPI details and QR image URL
+ */
+export const updateAdminSettingsBodyAdminUpiIdMin = 5;
+export const updateAdminSettingsBodyAdminUpiIdMax = 128;
+
+export const updateAdminSettingsBodyAdminQrCodeUrlMax = 2048;
+
+
+
+export const UpdateAdminSettingsBody = zod.object({
+  "adminUpiId": zod.string().min(updateAdminSettingsBodyAdminUpiIdMin).max(updateAdminSettingsBodyAdminUpiIdMax),
+  "adminQrCodeUrl": zod.string().min(1).max(updateAdminSettingsBodyAdminQrCodeUrlMax)
+})
+
+export const UpdateAdminSettingsResponse = zod.object({
+  "adminUpiId": zod.string(),
+  "adminQrCodeUrl": zod.string()
 })
 
 
@@ -318,8 +442,8 @@ export const DecideDepositResponse = zod.object({
   "utr": zod.string().nullish(),
   "upiId": zod.string().nullish(),
   "screenshotDataUrl": zod.string().nullish(),
-  "tax": zod.number().optional(),
-  "payout": zod.number().optional(),
+  "tax": zod.number(),
+  "payout": zod.number(),
   "createdAt": zod.coerce.date()
 })
 
@@ -341,8 +465,8 @@ export const CompleteWithdrawalResponse = zod.object({
   "utr": zod.string().nullish(),
   "upiId": zod.string().nullish(),
   "screenshotDataUrl": zod.string().nullish(),
-  "tax": zod.number().optional(),
-  "payout": zod.number().optional(),
+  "tax": zod.number(),
+  "payout": zod.number(),
   "createdAt": zod.coerce.date()
 })
 

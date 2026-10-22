@@ -8,8 +8,8 @@
 
 export interface WithdrawalInput {
   /**
-     * @minimum 1
-     * @maximum 100000
+     * @minimum 70
+     * @maximum 1000
      */
   amount: number;
   /**

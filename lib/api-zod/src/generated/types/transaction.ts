@@ -21,7 +21,7 @@ export interface Transaction {
   upiId?: string | null;
   /** @nullable */
   screenshotDataUrl?: string | null;
-  tax?: number;
-  payout?: number;
+  tax: number;
+  payout: number;
   createdAt: Date;
 }

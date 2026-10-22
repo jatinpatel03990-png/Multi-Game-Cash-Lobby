@@ -2,11 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export type Wallet = {
-  depositBalance: number;
-  winningBalance: number;
-  bonusBalance: number;
-};
+export type Wallet = { totalMoney: number };
 
 export type PlayerRecord = {
   id: string;
@@ -39,25 +35,48 @@ export type TransactionRecord = {
   createdAt: string;
 };
 
-export type MatchRecord = {
+export type RoomOptionId = "duo20" | "duo50" | "quad20" | "quad50";
+export type RoomRecord = {
   id: string;
-  userId: string;
   gameId: string;
   gameName: string;
-  status: "active" | "won" | "lost";
+  optionId: RoomOptionId;
   entryFee: number;
+  playerCount: number;
+  requiredSlots: number;
   prize: number;
-  opponentName: string;
+  adminKeeps: number;
+  status: "waiting" | "active" | "finished";
+  players: {
+    userId: string;
+    displayName: string;
+    score: number | null;
+  }[];
+  winnerId: string | null;
+  winnerName: string | null;
   createdAt: string;
+};
+
+export type AdminSettings = {
+  adminUpiId: string;
+  adminQrCodeUrl: string;
+};
+
+export type Revenue = {
+  rake20Player2: number;
+  rake50Player2: number;
+  rake20Player4: number;
+  rake50Player4: number;
+  totalWithdrawalTax: number;
 };
 
 export type CashStore = {
   users: PlayerRecord[];
   sessions: SessionRecord[];
   transactions: TransactionRecord[];
-  matches: MatchRecord[];
-  totalGameRake: number;
-  totalWithdrawalTaxes: number;
+  rooms: RoomRecord[];
+  settings: AdminSettings;
+  revenue: Revenue;
 };
 
 const filePath =
@@ -70,9 +89,18 @@ function emptyStore(): CashStore {
     users: [],
     sessions: [],
     transactions: [],
-    matches: [],
-    totalGameRake: 0,
-    totalWithdrawalTaxes: 0,
+    rooms: [],
+    settings: {
+      adminUpiId: "YOUR_UPI_ID@HERE",
+      adminQrCodeUrl: "/images/qr-placeholder.png",
+    },
+    revenue: {
+      rake20Player2: 0,
+      rake50Player2: 0,
+      rake20Player4: 0,
+      rake50Player4: 0,
+      totalWithdrawalTax: 0,
+    },
   };
 }
 
@@ -88,13 +116,50 @@ export async function readCashStore(): Promise<CashStore> {
       !("sessions" in parsed) ||
       !Array.isArray(parsed.sessions) ||
       !("transactions" in parsed) ||
-      !Array.isArray(parsed.transactions) ||
-      !("matches" in parsed) ||
-      !Array.isArray(parsed.matches)
+      !Array.isArray(parsed.transactions)
     ) {
       throw new Error("Cash game data file has an invalid structure.");
     }
-    return { ...emptyStore(), ...(parsed as Partial<CashStore>) };
+    const oldStore = parsed as Record<string, unknown>;
+    const defaults = emptyStore();
+    const users = (parsed.users as PlayerRecord[]).map((user) => {
+      const oldWallet = user.wallet as Wallet & {
+        depositBalance?: number;
+        winningBalance?: number;
+        bonusBalance?: number;
+      };
+      return {
+        ...user,
+        wallet: {
+          totalMoney:
+            typeof oldWallet?.totalMoney === "number"
+              ? oldWallet.totalMoney
+              : (oldWallet?.depositBalance ?? 0) +
+                (oldWallet?.winningBalance ?? 0) +
+                (oldWallet?.bonusBalance ?? 0),
+        },
+      };
+    });
+    return {
+      ...defaults,
+      ...(oldStore as Partial<CashStore>),
+      users,
+      rooms: Array.isArray(oldStore.rooms)
+        ? (oldStore.rooms as RoomRecord[])
+        : [],
+      settings: {
+        ...defaults.settings,
+        ...(typeof oldStore.settings === "object" && oldStore.settings
+          ? (oldStore.settings as Partial<AdminSettings>)
+          : {}),
+      },
+      revenue: {
+        ...defaults.revenue,
+        ...(typeof oldStore.revenue === "object" && oldStore.revenue
+          ? (oldStore.revenue as Partial<Revenue>)
+          : {}),
+      },
+    };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       throw error;

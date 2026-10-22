@@ -29,9 +29,8 @@ export interface Player {
 }
 
 export interface Wallet {
-  depositBalance: number;
-  winningBalance: number;
-  bonusBalance: number;
+  /** @minimum 0 */
+  totalMoney: number;
 }
 
 export interface SessionResponse {
@@ -66,9 +65,97 @@ export interface Game {
   id: string;
   name: string;
   description: string;
-  players: string;
+}
+
+export type RoomOptionId = typeof RoomOptionId[keyof typeof RoomOptionId];
+
+
+export const RoomOptionId = {
+  duo20: 'duo20',
+  duo50: 'duo50',
+  quad20: 'quad20',
+  quad50: 'quad50',
+} as const;
+
+export type RoomOptionPlayerCount = typeof RoomOptionPlayerCount[keyof typeof RoomOptionPlayerCount];
+
+
+export const RoomOptionPlayerCount = {
+  NUMBER_2: 2,
+  NUMBER_4: 4,
+} as const;
+
+export interface RoomOption {
+  id: RoomOptionId;
+  title: string;
+  playerCount: RoomOptionPlayerCount;
   entryFee: number;
   prize: number;
+  adminKeeps: number;
+}
+
+export interface RoomPlayer {
+  userId: string;
+  displayName: string;
+  hasSubmittedScore: boolean;
+}
+
+export type RoomStatus = typeof RoomStatus[keyof typeof RoomStatus];
+
+
+export const RoomStatus = {
+  waiting: 'waiting',
+  active: 'active',
+  finished: 'finished',
+} as const;
+
+export interface Room {
+  id: string;
+  gameId: string;
+  gameName: string;
+  optionId: RoomOptionId;
+  entryFee: number;
+  playerCount: number;
+  requiredSlots: number;
+  prize: number;
+  status: RoomStatus;
+  /** @nullable */
+  winnerName?: string | null;
+  players: RoomPlayer[];
+  createdAt: string;
+  userSubmittedScore: boolean;
+}
+
+export type RoomJoinInputGameId = typeof RoomJoinInputGameId[keyof typeof RoomJoinInputGameId];
+
+
+export const RoomJoinInputGameId = {
+  snake: 'snake',
+  clicker: 'clicker',
+  'tic-tac-toe': 'tic-tac-toe',
+} as const;
+
+export type RoomJoinInputOptionId = typeof RoomJoinInputOptionId[keyof typeof RoomJoinInputOptionId];
+
+
+export const RoomJoinInputOptionId = {
+  duo20: 'duo20',
+  duo50: 'duo50',
+  quad20: 'quad20',
+  quad50: 'quad50',
+} as const;
+
+export interface RoomJoinInput {
+  gameId: RoomJoinInputGameId;
+  optionId: RoomJoinInputOptionId;
+}
+
+export interface RoomScoreInput {
+  /**
+     * @minimum 0
+     * @maximum 100000
+     */
+  score: number;
 }
 
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
@@ -102,60 +189,15 @@ export interface Transaction {
   upiId?: string | null;
   /** @nullable */
   screenshotDataUrl?: string | null;
-  tax?: number;
-  payout?: number;
+  tax: number;
+  payout: number;
   createdAt: string;
-}
-
-export type MatchStatus = typeof MatchStatus[keyof typeof MatchStatus];
-
-
-export const MatchStatus = {
-  active: 'active',
-  won: 'won',
-  lost: 'lost',
-} as const;
-
-export interface Match {
-  id: string;
-  gameId: string;
-  gameName: string;
-  status: MatchStatus;
-  entryFee: number;
-  prize: number;
-  opponentName: string;
-  createdAt: string;
-}
-
-export type MatchStartInputGameId = typeof MatchStartInputGameId[keyof typeof MatchStartInputGameId];
-
-
-export const MatchStartInputGameId = {
-  snake: 'snake',
-  clicker: 'clicker',
-  'tic-tac-toe': 'tic-tac-toe',
-} as const;
-
-export interface MatchStartInput {
-  gameId: MatchStartInputGameId;
-}
-
-export type MatchFinishInputResult = typeof MatchFinishInputResult[keyof typeof MatchFinishInputResult];
-
-
-export const MatchFinishInputResult = {
-  won: 'won',
-  lost: 'lost',
-} as const;
-
-export interface MatchFinishInput {
-  result: MatchFinishInputResult;
 }
 
 export interface DepositInput {
   /**
-     * @minimum 1
-     * @maximum 100000
+     * @minimum 50
+     * @maximum 500
      */
   amount: number;
   /**
@@ -169,8 +211,8 @@ export interface DepositInput {
 
 export interface WithdrawalInput {
   /**
-     * @minimum 1
-     * @maximum 100000
+     * @minimum 70
+     * @maximum 1000
      */
   amount: number;
   /**
@@ -192,19 +234,47 @@ export interface DepositDecisionInput {
   decision: DepositDecisionInputDecision;
 }
 
+export interface AdminSettings {
+  adminUpiId: string;
+  adminQrCodeUrl: string;
+}
+
+export interface AdminSettingsInput {
+  /**
+     * @minLength 5
+     * @maxLength 128
+     */
+  adminUpiId: string;
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     */
+  adminQrCodeUrl: string;
+}
+
 export interface LobbyResponse {
   user: Player;
   wallet: Wallet;
   games: Game[];
+  /**
+     * @minItems 4
+     * @maxItems 4
+     */
+  roomOptions: RoomOption[];
+  activeRoom: Room | null;
   transactions: Transaction[];
-  matches: Match[];
+  settings: AdminSettings;
 }
 
 export interface AdminDashboard {
-  totalGameRake: number;
-  totalWithdrawalTaxes: number;
+  rake20Player2: number;
+  rake50Player2: number;
+  rake20Player4: number;
+  rake50Player4: number;
+  totalWithdrawalTax: number;
   pendingCount: number;
   deposits: Transaction[];
   withdrawals: Transaction[];
+  settings: AdminSettings;
 }
 

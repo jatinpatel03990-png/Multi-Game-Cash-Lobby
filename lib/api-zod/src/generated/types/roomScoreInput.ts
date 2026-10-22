@@ -5,8 +5,11 @@
  * API for the Cash Game Lobby prototype.
  * OpenAPI spec version: 0.1.0
  */
-import type { MatchStartInputGameId } from './matchStartInputGameId';
 
-export interface MatchStartInput {
-  gameId: MatchStartInputGameId;
+export interface RoomScoreInput {
+  /**
+     * @minimum 0
+     * @maximum 100000
+     */
+  score: number;
 }

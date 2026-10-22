@@ -1,0 +1,28 @@
+Build a mobile-responsive Real-Money Multi-Game Web Application using Node.js. The app must use local JSON/Object storage for configurations, user accounts, and live transactions, running on a 100% manual validation system with zero external automated payment gateway APIs. Ensure there are strictly NO customer helpline numbers, support text, contact forms, email links, or query management elements anywhere in the application.
+
+1. ADMIN SYSTEM SETTINGS & DYNAMIC PAYOUT QR CODE ENGINE:
+- In the backend database, create persistent configuration variables for 'adminUpiId' (default placeholder: "YOUR_UPI_ID@HERE") and 'adminQrCodeUrl' (default placeholder: "/images/qr-placeholder.png").
+- On the secure '/admin' control panel dashboard, build a dedicated "System Settings & Payment Config" form view where the administrator can instantly change their public deposit UPI details straight from the interface.
+- AUTOMATED PAYOUT QR CODES: On the '/admin' pending withdrawals ledger table, the system must use a public chart engine (like ://qrserver.com) to dynamically generate and display a custom, scan-ready UPI QR code image inside each row. The image must embed a verified UPI payment string containing the user's specific target UPI ID and their exact tax-deducted final payout amount (`upi://pay?pa=PLAYER_UPI&am=FINAL_AMOUNT&cu=INR&tn=AppPayout`). The row must cleanly show the User's text UPI ID side-by-side with this generated scan box.
+
+2. UNIFIED WALLET SYSTEM ("TOTAL MONEY"):
+- The player dashboard must completely eliminate separate cash or bonus wallet fields. It must feature only one clear, central balance display labeled "Total Money".
+- Upon user registration, a ₹10 signup bonus is added directly into this single "Total Money" pool.
+- All approved manual deposits (between ₹50 and ₹500) and game winnings must add straight into this single "Total Money" balance.
+- GAME ENTRY DEDUCTION: When a user clicks to join any game room (₹20 or ₹50 fee), the application must verify if their total available "Total Money" balance is greater than or equal to that room's entry fee. If yes, subtract the exact entry fee directly from the "Total Money" balance as a single deduction.
+
+3. VARIABLE GAME ROOMS & BALANCED MATCHMAKING LOBBY:
+- Create a lobby dashboard where users can choose from exactly four room choices:
+  * 2-Player 1v1 Room at ₹20 Entry (Winner takes ₹32.40. Admin keeps a 10% rake).
+  * 2-Player 1v1 Room at ₹50 Entry (Winner takes ₹81.00. Admin keeps a 10% rake).
+  * 4-Player Room at ₹20 Entry (Requires 4 real players. 1st Place Winner takes ₹60.00. Admin keeps the 4th player's ₹20).
+  * 4-Player Room at ₹50 Entry (Requires 4 real players. 1st Place Winner takes ₹150.00. Admin keeps the 4th player's ₹50).
+- MATCHMAKING ENFORCEMENT: A match must strictly NEVER start with bots or a single player. Users who click join must wait in a queue page displaying a "Searching for players..." loading screen until real users completely fill the required slots.
+
+4. DEPOSIT & WITHDRAWAL CONTROLS WITH TRANSACTION LIMITS:
+- "Add Cash" Page: Dynamically reads and displays the current admin UPI ID and QR code image stored in the server configuration. Note on the page: "Minimum Deposit: ₹50 | Maximum Deposit: ₹500". The system must allow users to type ANY exact rupee value within this range. Block the form if it is outside these limits. Approved entries deposit straight into "Total Money".
+- "Withdraw Cash" Page: Display a notice reading "Minimum Withdrawal: ₹70 | Maximum Withdrawal: ₹1,000". As the user types their request, dynamically show the 5% platform processing tax and final payout amount. Allow users to cash out ANY exact rupee amount they choose within this range. Block submission if the value typed is under ₹70, over ₹1,000, or if it exceeds their available "Total Money" balance.
+
+5. PRIVATE ADMIN PANEL REVENUE SEGMENTATION ('/admin'):
+- Update the secure '/admin' dashboard UI and the server database ledger to track and display separate profit variables: 'rake20Player2', 'rake50Player2', 'rake20Player4', 'rake50Player4', and 'totalWithdrawalTax' (from the 5% cashout fee).
+- Every time a match resolves or a withdrawal is processed, automatically calculate, display, and increment the respective profit stream variable inside a responsive card grid layout for the administrator.

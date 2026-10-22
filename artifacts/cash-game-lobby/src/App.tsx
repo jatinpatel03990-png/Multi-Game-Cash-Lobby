@@ -1,382 +1,257 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import {
-  ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronRight, LogOut, RefreshCw, ShieldCheck,
-  Sparkles, Trophy, Wallet as WalletIcon,
-  X,
-} from 'lucide-react';
-import {
-  getGetAdminDashboardQueryKey, getGetLobbyQueryKey, getGetSessionQueryKey,
-  useCompleteWithdrawal, useCreateDeposit, useCreateWithdrawal, useDecideDeposit,
-  useFinishMatch, useGetAdminDashboard, useGetLobby, useGetSession, useSignIn,
-  useSignOut, useSignUp, useStartMatch,
-} from '@workspace/api-client-react';
-import type { AdminDashboard, Game, Match, Transaction } from '@workspace/api-client-react';
 import { Link, Route, Switch, useLocation, useParams } from 'wouter';
 import type { FormEvent, ReactNode } from 'react';
+import QRCode from 'qrcode';
+import {
+  ArrowLeft, ArrowRight, ChevronRight, LogOut, RefreshCw, ShieldCheck, Trophy,
+} from 'lucide-react';
+import {
+  getGetAdminDashboardQueryKey, getGetLobbyQueryKey, getGetRoomQueryKey,
+  getGetSessionQueryKey, useCompleteWithdrawal, useCreateDeposit, useCreateWithdrawal,
+  useDecideDeposit, useGetAdminDashboard, useGetLobby, useGetRoom, useGetSession,
+  useJoinRoom, useLeaveRoom, useSignIn, useSignOut, useSignUp, useSubmitRoomScore,
+  useUpdateAdminSettings,
+} from '@workspace/api-client-react';
+import type {
+  AdminDashboard, AdminSettings, Game, Room, RoomOption, RoomOptionId,
+  RoomJoinInputGameId, RoomJoinInputOptionId, Transaction,
+} from '@workspace/api-client-react';
 
 const queryClient = new QueryClient();
 const money = (amount = 0) => `₹${Number(amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const dateLabel = (date: string) => new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 const safeError = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+const options: RoomOption[] = [
+  { id: 'duo20', title: '2-player room', playerCount: 2, entryFee: 20, prize: 32.4, adminKeeps: 7.6 },
+  { id: 'duo50', title: '2-player room', playerCount: 2, entryFee: 50, prize: 81, adminKeeps: 19 },
+  { id: 'quad20', title: '4-player room', playerCount: 4, entryFee: 20, prize: 60, adminKeeps: 20 },
+  { id: 'quad50', title: '4-player room', playerCount: 4, entryFee: 50, prize: 150, adminKeeps: 50 },
+];
 
 function AppFrame({ children, user }: { children: ReactNode; user?: { displayName: string; role: string } | null }) {
   const signOut = useSignOut();
   const client = useQueryClient();
   const [, setLocation] = useLocation();
+  const [path] = useLocation();
   const nav = [
-    { label: 'Lobby', href: '/' },
-    { label: 'Add cash', href: '/add-cash' },
-    { label: 'Withdraw', href: '/withdraw' },
-    ...(user?.role === 'admin' ? [{ label: 'Admin', href: '/admin' }] : []),
+    { label: 'Lobby', href: '/' }, { label: 'Add cash', href: '/add-cash' },
+    { label: 'Withdraw', href: '/withdraw' }, ...(user?.role === 'admin' ? [{ label: 'Admin', href: '/admin' }] : []),
   ];
   const logout = () => signOut.mutate(undefined, { onSuccess: () => {
     client.invalidateQueries({ queryKey: getGetSessionQueryKey() });
-    client.invalidateQueries({ queryKey: getGetLobbyQueryKey() });
-    setLocation('/');
+    client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); setLocation('/');
   } });
   return <div className="shell">
     <header className="topbar">
       <Link href="/" className="brand"><span className="brand-mark">K</span><span>KHELO<span style={{ color: '#16805e' }}>.</span></span></Link>
-      <nav className="topnav" aria-label="Main navigation">
-        {nav.map(item => <Link key={item.href} href={item.href} className={location.pathname === item.href ? 'active' : ''}>{item.label}</Link>)}
-      </nav>
-      {user ? <div className="account"><span className="avatar">{user.displayName.slice(0, 1).toUpperCase()}</span><span>{user.displayName}</span><button className="btn btn-soft btn-small" onClick={logout} disabled={signOut.isPending} aria-label="Sign out"><LogOut size={14} /></button></div> :
-        <Link href="/" className="btn btn-primary btn-small">Sign in</Link>}
+      <nav className="topnav" aria-label="Main navigation">{nav.map(item => <Link key={item.href} href={item.href} className={path === item.href ? 'active' : ''}>{item.label}</Link>)}</nav>
+      {user ? <div className="account"><span className="avatar">{user.displayName.slice(0, 1).toUpperCase()}</span><span>{user.displayName}</span><button className="btn btn-soft btn-small" onClick={logout} disabled={signOut.isPending} aria-label="Sign out"><LogOut size={14} /></button></div> : <Link href="/" className="btn btn-primary btn-small">Sign in</Link>}
     </header>
-    {user && <nav className="mobile-menu" aria-label="Mobile navigation">{nav.map(item => <Link key={item.href} href={item.href} className={location.pathname === item.href ? 'active' : ''}>{item.label}</Link>)}</nav>}
+    {user && <nav className="mobile-menu" aria-label="Mobile navigation">{nav.map(item => <Link key={item.href} href={item.href} className={path === item.href ? 'active' : ''}>{item.label}</Link>)}</nav>}
     {children}
   </div>;
 }
 
 function AuthScreen({ onAuth }: { onAuth: () => void }) {
-  const signup = useSignUp();
-  const signin = useSignIn();
-  const client = useQueryClient();
+  const signup = useSignUp(); const signin = useSignIn(); const client = useQueryClient();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const mutation = mode === 'signin' ? signin : signup;
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const onSuccess = () => {
-      client.invalidateQueries({ queryKey: getGetSessionQueryKey() });
-      client.invalidateQueries({ queryKey: getGetLobbyQueryKey() });
-      onAuth();
-    };
+    const onSuccess = () => { client.invalidateQueries({ queryKey: getGetSessionQueryKey() }); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); onAuth(); };
     if (mode === 'signin') signin.mutate({ data: { email, password } }, { onSuccess });
     else signup.mutate({ data: { email, displayName: name, password } }, { onSuccess });
   };
-  return <AppFrame user={null}><main className="auth-wrap">
-    <section className="auth-card">
-      <div className="eyebrow">Your next match is one tap away</div>
-      <h1>{mode === 'signin' ? 'Back in the game.' : 'Make your move.'}</h1>
-      <p>Quick skill matches. Clear balances. Every rupee accounted for.</p>
-      <form onSubmit={submit}>
-        {mode === 'signup' && <div className="input-wrap"><label htmlFor="display-name">Display name</label><input id="display-name" data-testid="input-display-name" required minLength={2} maxLength={40} value={name} onChange={e => setName(e.target.value)} placeholder="What should we call you?" /></div>}
-        <div className="input-wrap"><label htmlFor="email">Email address</label><input id="email" data-testid="input-email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></div>
-        <div className="input-wrap"><label htmlFor="password">Password</label><input id="password" data-testid="input-password" type="password" required minLength={mode === 'signup' ? 10 : 1} value={password} onChange={e => setPassword(e.target.value)} placeholder={mode === 'signup' ? 'At least 10 characters' : 'Your password'} /></div>
-        {mutation.isError && <div className="error-text" role="alert">{safeError(mutation.error)}</div>}
-        <button className="btn btn-primary" data-testid="button-auth-submit" type="submit" disabled={mutation.isPending} style={{ width: '100%', marginTop: 8 }}>{mutation.isPending ? 'One moment…' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
-      </form>
-      <button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); signin.reset(); signup.reset(); }}>
-        {mode === 'signin' ? 'New here? Create an account' : 'Already have an account? Sign in'}
-      </button>
-    </section>
-  </main></AppFrame>;
+  return <AppFrame user={null}><main className="auth-wrap"><section className="auth-card">
+    <div className="eyebrow">Real players. Clear winnings.</div><h1>{mode === 'signin' ? 'Back in the game.' : 'Make your move.'}</h1>
+    <p>Quick skill matches with one transparent Total Money balance. New players receive ₹10 to get started.</p>
+    <form onSubmit={submit}>
+      {mode === 'signup' && <div className="input-wrap"><label htmlFor="display-name">Display name</label><input id="display-name" required minLength={2} maxLength={40} value={name} onChange={e => setName(e.target.value)} placeholder="Your player name" /></div>}
+      <div className="input-wrap"><label htmlFor="email">Email address</label><input id="email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></div>
+      <div className="input-wrap"><label htmlFor="password">Password</label><input id="password" type="password" required minLength={mode === 'signup' ? 10 : 1} value={password} onChange={e => setPassword(e.target.value)} placeholder={mode === 'signup' ? 'At least 10 characters' : 'Your password'} /></div>
+      {mutation.isError && <div className="error-text" role="alert">{safeError(mutation.error)}</div>}
+      <button className="btn btn-primary" type="submit" disabled={mutation.isPending} style={{ width: '100%', marginTop: 8 }}>{mutation.isPending ? 'One moment…' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
+    </form>
+    <button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); signin.reset(); signup.reset(); }}>{mode === 'signin' ? 'New here? Create an account' : 'Already have an account? Sign in'}</button>
+  </section></main></AppFrame>;
 }
 
-function LoadingState() {
-  return <main className="loading-page"><div className="skeleton" /><div style={{ height: 20 }} /><div className="skeleton" style={{ height: 130 }} /></main>;
-}
-
+function LoadingState() { return <main className="loading-page"><div className="skeleton" /><div style={{ height: 18 }} /><div className="skeleton" style={{ height: 130 }} /></main>; }
 function QueryError({ retry, message }: { retry: () => void; message: string }) {
-  return <div className="panel" style={{ maxWidth: 600, margin: '60px auto', textAlign: 'center' }}><h2>We hit a pause.</h2><p>{message}</p><button className="btn btn-primary" onClick={retry}><RefreshCw size={14} style={{ verticalAlign: 'middle', marginRight: 7 }} />Try again</button></div>;
+  return <div className="panel" style={{ maxWidth: 600, margin: '60px auto', textAlign: 'center' }}><h2>We hit a pause.</h2><p>{message}</p><button className="btn btn-primary" onClick={retry}><RefreshCw size={14} />Try again</button></div>;
 }
-
 function Status({ value }: { value: string }) { return <span className={`status ${value}`}>{value}</span>; }
 
-function WalletBlock({ wallet }: { wallet: { depositBalance: number; winningBalance: number; bonusBalance: number } }) {
-  const items = [
-    { label: 'Deposit balance', value: wallet.depositBalance, icon: <WalletIcon size={17} />, foot: 'Cash added to your account', href: '/add-cash' },
-    { label: 'Winning balance', value: wallet.winningBalance, icon: <Trophy size={17} />, foot: 'Available to withdraw', href: '/withdraw' },
-    { label: 'Bonus balance', value: wallet.bonusBalance, icon: <Sparkles size={17} />, foot: 'Used toward match entry', href: null },
-  ];
-  return <div className="wallet-grid">{items.map(item => <div className="wallet-card" key={item.label} data-testid={`wallet-${item.label.toLowerCase().replace(/ /g, '-')}`}>
-    <div className="wallet-icon">{item.icon}</div><div className="wallet-name">{item.label}</div><div className="wallet-value">{money(item.value)}</div><div className="wallet-foot">{item.foot}</div>
-    {item.href && <Link href={item.href} className="action-link">{item.href === '/add-cash' ? 'Add cash' : 'Withdraw'} <ChevronRight size={12} style={{ verticalAlign: 'middle' }} /></Link>}
-  </div>)}</div>;
-}
-
-function GameCard({ game }: { game: Game }) {
-  const slug = game.id.toLowerCase();
-  const artClass = slug.includes('snake') ? 'snake' : slug.includes('click') ? 'clicker' : 'tic';
-  const symbol = artClass === 'snake' ? 'SNAKE' : artClass === 'clicker' ? 'TAP!' : 'X / O';
-  return <Link href={`/games/${game.id}`} className="game-card" data-testid={`card-game-${game.id}`}>
-    <div className={`game-art ${artClass}`}><span className="game-symbol">{symbol}</span></div>
-    <div className="game-details"><h3>{game.name}</h3><p>{game.description}</p>
-      <div className="game-meta"><span>{game.players}</span><span>{money(game.entryFee)} entry</span><span style={{ color: '#16805e', fontWeight: 700 }}>{money(game.prize)} prize</span></div>
-    </div>
-  </Link>;
+function Lobby({ user, wallet, games, transactions, activeRoom, retry }: {
+  user: { displayName: string }; wallet: { totalMoney: number }; games: Game[]; transactions: Transaction[]; activeRoom: Room | null; retry: () => void;
+}) {
+  const [gameId, setGameId] = useState<RoomJoinInputGameId>('snake');
+  const join = useJoinRoom(); const client = useQueryClient(); const [, setLocation] = useLocation();
+  const orderedGames = useMemo(() => {
+    const canonical = ['snake', 'clicker', 'tic-tac-toe'];
+    return canonical.map(id => games.find(game => game.id === id)).filter((game): game is Game => Boolean(game));
+  }, [games]);
+  const selectedGame = orderedGames.find(game => game.id === gameId) ?? orderedGames[0];
+  const joinRoom = (optionId: RoomOptionId) => {
+    if (!selectedGame) return;
+    join.mutate({ data: { gameId: selectedGame.id as RoomJoinInputGameId, optionId: optionId as RoomJoinInputOptionId } }, {
+      onSuccess: room => { client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); client.invalidateQueries({ queryKey: getGetRoomQueryKey(room.id) }); setLocation(`/rooms/${room.id}`); },
+    });
+  };
+  return <AppFrame user={user}><main className="page">
+    <section className="hero"><div className="hero-copy"><div className="eyebrow" style={{ color: '#a9c4b3' }}>Khelo skill club / real-player rooms</div><h1>Ready when<br />you are.</h1><p>Pick your game, choose a room, and play only when every real-player slot is filled.</p><Link className="btn btn-yellow" href="#rooms">Choose a room <ArrowRight size={15} /></Link></div><div className="hero-art" aria-hidden="true"><div className="hero-token">₹</div><div className="hero-label">one Total Money balance</div></div></section>
+    <section><div className="section-head"><div><div className="eyebrow">Your wallet</div><h2>One balance. No guesswork.</h2></div><Link href="/add-cash" className="btn btn-soft btn-small">Add cash <ChevronRight size={13} /></Link></div>
+      <div className="wallet-card" data-testid="wallet-total-money"><div className="wallet-name">Total Money</div><div className="wallet-value">{money(wallet.totalMoney)}</div><div className="wallet-foot">Signup bonus ₹10 is included in your unified balance.</div><Link href="/withdraw" className="btn btn-soft btn-small wallet-action">Withdraw</Link></div>
+    </section>
+    {activeRoom && <section className="notice green" style={{ marginTop: 18 }}><strong>You have a room in progress.</strong> {activeRoom.gameName} · {activeRoom.status === 'waiting' ? 'Searching for players...' : activeRoom.status}. <Link href={`/rooms/${activeRoom.id}`} style={{ fontWeight: 800 }}>Return to room</Link></section>}
+    <section id="rooms"><div className="section-head"><div><div className="eyebrow">Choose your challenge</div><h2>Three games. Four room choices.</h2></div><span className="eyebrow">real players only</span></div>
+      <div className="games-strip" role="tablist" aria-label="Choose a game">{orderedGames.map(game => <button key={game.id} role="tab" aria-selected={game.id === selectedGame?.id} className={`game-tab${game.id === selectedGame?.id ? ' selected' : ''}`} onClick={() => setGameId(game.id as RoomJoinInputGameId)}><strong>{game.name}</strong><span>{game.description}</span></button>)}</div>
+      {!selectedGame ? <div className="panel empty">Games are unavailable right now. <button onClick={retry} className="auth-switch">Reload lobby</button></div> :
+      <><div className="room-grid" style={{ marginTop: 12 }}>{options.map((option, index) => <article className={`room-card${index === 1 ? ' featured' : ''}`} key={option.id} data-testid={`room-option-${option.id}`}>
+        <span className="eyebrow">{option.playerCount} real players</span><span className="room-fee">{money(option.entryFee)} entry</span><h3 className="room-title">{option.title}</h3><p className="room-prize">Winner receives <strong>{money(option.prize)}</strong></p>
+        <button className={`btn ${index === 1 ? 'btn-yellow' : 'btn-primary'}`} onClick={() => joinRoom(option.id)} disabled={join.isPending || Boolean(activeRoom)}>{join.isPending ? 'Joining…' : `Join for ${money(option.entryFee)}`}</button>
+      </article>)}</div>
+      {join.isError && <div className="error-text" role="alert">{safeError(join.error)}</div>}
+      {activeRoom && <p className="helper" style={{ marginTop: 10 }}>Leave your current waiting room before joining another match.</p>}</>}
+    </section>
+    <section><div className="section-head"><div><div className="eyebrow">Wallet ledger</div><h2>Recent activity</h2></div></div><ActivityTable transactions={transactions} /></section>
+  </main></AppFrame>;
 }
 
 function ActivityTable({ transactions }: { transactions: Transaction[] }) {
-  if (!transactions.length) return <div className="activity"><div className="empty">Your wallet activity will show up here.</div></div>;
-  return <div className="activity">
-    <div className="activity-row activity-head"><span>Type</span><span>Reference</span><span>Amount</span><span>Status</span></div>
-    {transactions.slice(0, 5).map(item => <div className="activity-row" key={item.id} data-testid={`row-transaction-${item.id}`}>
-      <span style={{ textTransform: 'capitalize', fontWeight: 800 }}>{item.type}</span><span>{dateLabel(item.createdAt)}</span><span>{money(item.amount)}</span><Status value={item.status} />
-    </div>)}
+  if (!transactions.length) return <div className="activity"><div className="empty">Your wallet activity will appear here.</div></div>;
+  return <div className="activity"><div className="activity-row activity-head"><span>Type</span><span>Reference</span><span>Amount</span><span>Status</span></div>
+    {transactions.slice(0, 5).map(row => <div className="activity-row" key={row.id} data-testid={`row-transaction-${row.id}`}><strong style={{ textTransform: 'capitalize' }}>{row.type}</strong><span>{dateLabel(row.createdAt)}</span><span>{money(row.amount)}</span><Status value={row.status} /></div>)}
   </div>;
 }
 
-function Lobby({ user, wallet, games, transactions, matches, retry }: {
-  user: { displayName: string }; wallet: { depositBalance: number; winningBalance: number; bonusBalance: number };
-  games: Game[]; transactions: Transaction[]; matches: Match[]; retry: () => void;
-}) {
-  return <AppFrame user={user}><main className="page">
-    <section className="hero">
-      <div className="hero-copy"><div className="eyebrow" style={{ color: '#a9c4b3' }}>Khelo skill club / match 01</div>
-        <h1>Good game.<br />Great instincts.</h1><p>Pick a quick challenge, bring your focus, and play for a ₹108 prize. Your balances stay clear, always.</p>
-        <a className="btn btn-yellow" href="#games">Find your game <ArrowRight size={15} style={{ verticalAlign: 'middle', marginLeft: 8 }} /></a>
-      </div>
-      <div className="hero-art" aria-hidden="true"><div className="hero-token">₹</div><div className="hero-label">₹54 cash + ₹6 bonus</div></div>
-    </section>
-    <section><div className="section-head"><div><div className="eyebrow">Your money, in its place</div><h2>Three balances. No guesswork.</h2></div><Link href="/add-cash" className="btn btn-soft btn-small">Add cash <ArrowUpRight size={13} style={{ verticalAlign: 'middle', marginLeft: 4 }} /></Link></div>
-      <WalletBlock wallet={wallet} /></section>
-    <section id="games"><div className="section-head"><div><div className="eyebrow">Pick a quick match</div><h2>Play your kind of game.</h2></div><span className="eyebrow">{games.length} skill games</span></div>
-      {games.length ? <div className="games-grid">{games.map(game => <GameCard key={game.id} game={game} />)}</div> : <div className="panel empty">Games are taking a short break. <button onClick={retry} className="auth-switch">Reload lobby</button></div>}
-    </section>
-    <section><div className="section-head"><div><div className="eyebrow">Recent matches</div><h2>Last played</h2></div></div>
-      {matches.length ? <div className="activity">{matches.slice(0, 4).map(match => <div className="activity-row" key={match.id} data-testid={`row-match-${match.id}`}><span style={{ fontWeight: 800 }}>{match.gameName}</span><span>vs {match.opponentName}</span><span>{money(match.entryFee)} / {money(match.prize)}</span><Status value={match.status} /></div>)}</div> : <div className="panel empty">No matches yet. Choose a game above to get started.</div>}
-    </section>
-    <section><div className="section-head"><div><div className="eyebrow">Wallet ledger</div><h2>Recent activity</h2></div></div><ActivityTable transactions={transactions} /></section>
-    <div className="notice" style={{ marginTop: 23 }}><strong>Match maths, plainly.</strong> A ₹60 entry uses exactly ₹54 from your deposit balance and ₹6 from bonus. The ₹108 prize goes straight to winning balance.</div>
-  </main></AppFrame>;
-}
-
-function DepositPage({ user, balance }: { user: { displayName: string }; balance: number }) {
-  const create = useCreateDeposit();
-  const client = useQueryClient();
-  const [amount, setAmount] = useState('');
-  const [utr, setUtr] = useState('');
-  const [fileData, setFileData] = useState('');
-  const [fileName, setFileName] = useState('');
-  const [sent, setSent] = useState(false);
-  const [fileError, setFileError] = useState('');
-  const onFile = (file?: File) => {
-    if (!file) return;
-    if (file.size > 2_000_000) { setFileError('Image must be smaller than 2 MB.'); return; }
-    setFileError('');
-    const reader = new FileReader();
-    reader.onload = () => { setFileData(String(reader.result || '')); setFileName(file.name); };
-    reader.readAsDataURL(file);
-  };
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setSent(false);
-    create.mutate({ data: { amount: Number(amount), utr, screenshotDataUrl: fileData } }, {
-      onSuccess: () => { setSent(true); setAmount(''); setUtr(''); setFileData(''); setFileName(''); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); },
-    });
-  };
-  return <AppFrame user={user}><main className="page"><div className="subpage-head"><div><div className="eyebrow">Wallet / deposit</div><h1>Add cash</h1><p>Send a UPI payment, then share the UTR and payment screenshot. Deposits are manually reviewed before your balance changes.</p></div><Link href="/" className="btn btn-soft btn-small"><ArrowLeft size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />Lobby</Link></div>
-    <div className="two-col"><section className="panel"><h2>Request a deposit</h2><p>Your current deposit balance: <strong>{money(balance)}</strong></p>
-      <div className="notice green"><strong>Pay to UPI</strong><br /><span className="font-mono">YOUR_UPI_ID@HERE</span><br />Use your UPI app to send the amount, then enter the matching details below.</div>
-      <form onSubmit={submit}>
-        <div className="input-wrap"><label htmlFor="deposit-amount">Amount (₹)</label><input id="deposit-amount" data-testid="input-deposit-amount" type="number" min="1" max="100000" required value={amount} onChange={e => setAmount(e.target.value)} placeholder="Enter amount" /></div>
-        <div className="input-wrap"><label htmlFor="utr">UPI transaction reference (UTR)</label><input id="utr" data-testid="input-deposit-utr" required minLength={6} maxLength={64} value={utr} onChange={e => setUtr(e.target.value)} placeholder="12-digit transaction reference" /></div>
-        <div className="input-wrap"><label htmlFor="payment-proof">Payment screenshot</label><input id="payment-proof" data-testid="input-deposit-screenshot" type="file" accept="image/*" required onChange={e => onFile(e.target.files?.[0])} /><span className="helper">{fileName || 'PNG or JPG, up to 2 MB'}</span></div>
+function DepositPage({ user, totalMoney, settings }: { user: { displayName: string }; totalMoney: number; settings: AdminSettings }) {
+  const create = useCreateDeposit(); const client = useQueryClient();
+  const [amount, setAmount] = useState(''); const [utr, setUtr] = useState(''); const [fileData, setFileData] = useState(''); const [fileName, setFileName] = useState(''); const [sent, setSent] = useState(false); const [fileError, setFileError] = useState('');
+  const onFile = (file?: File) => { if (!file) return; if (file.size > 2_000_000) { setFileError('Image must be smaller than 2 MB.'); return; } setFileError(''); const reader = new FileReader(); reader.onload = () => { setFileData(String(reader.result || '')); setFileName(file.name); }; reader.readAsDataURL(file); };
+  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setSent(false); create.mutate({ data: { amount: Number(amount), utr, screenshotDataUrl: fileData } }, { onSuccess: () => { setSent(true); setAmount(''); setUtr(''); setFileData(''); setFileName(''); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); } }); };
+  return <AppFrame user={user}><main className="page"><div className="subpage-head"><div><div className="eyebrow">Wallet / deposit</div><h1>Add cash</h1><p>Pay by UPI and submit your reference and proof. Deposits are reviewed before they appear in Total Money.</p></div><Link href="/" className="btn btn-soft btn-small"><ArrowLeft size={13} />Lobby</Link></div>
+    <div className="two-col"><section className="panel"><h2>Request a deposit</h2><p>Current Total Money: <strong>{money(totalMoney)}</strong></p>
+      <div className="notice green" style={{ display: 'flex', gap: 17, alignItems: 'center', flexWrap: 'wrap' }}><div><strong>Pay to this UPI ID</strong><br /><span className="font-mono">{settings.adminUpiId || 'UPI details are not configured'}</span></div>{settings.adminQrCodeUrl && <img className="qr" src={settings.adminQrCodeUrl} alt="Admin payment QR code" />}</div>
+      <form onSubmit={submit}><div className="input-wrap"><label htmlFor="deposit-amount">Amount (₹)</label><input id="deposit-amount" type="number" min="50" max="500" step="1" required value={amount} onChange={e => setAmount(e.target.value)} placeholder="50–500" /><span className="helper">Minimum ₹50 · Maximum ₹500</span></div>
+        <div className="input-wrap"><label htmlFor="deposit-utr">UPI transaction reference (UTR)</label><input id="deposit-utr" required minLength={6} maxLength={64} value={utr} onChange={e => setUtr(e.target.value)} placeholder="Transaction reference" /></div>
+        <div className="input-wrap"><label htmlFor="deposit-proof">Payment screenshot</label><input id="deposit-proof" type="file" accept="image/*" required onChange={e => onFile(e.target.files?.[0])} /><span className="helper">{fileName || 'PNG or JPG, up to 2 MB'}</span></div>
         {(fileError || create.isError) && <div className="error-text" role="alert">{fileError || safeError(create.error)}</div>}
-        <button className="btn btn-primary" type="submit" data-testid="button-submit-deposit" disabled={create.isPending || !fileData} style={{ width: '100%' }}>{create.isPending ? 'Sending request…' : 'Submit deposit request'}</button>
-      </form>
-      {sent && <div className="success-box" role="status">Deposit request sent. It will appear in your activity while our team reviews it.</div>}
-    </section>
-    <aside className="panel"><div className="eyebrow">What happens next</div><h2 style={{ marginTop: 9 }}>A clear, manual check.</h2><p>We match your reference and screenshot to the payment. Once approved, the deposit amount is added to your deposit balance.</p>
-      <div style={{ display: 'grid', gap: 15, marginTop: 21 }}>{[['01', 'Pay via UPI', 'Send to YOUR_UPI_ID@HERE'], ['02', 'Share the proof', 'Enter UTR and upload the receipt'], ['03', 'Wait for review', 'Manual review before funds appear']].map(item => <div key={item[0]} style={{ display: 'flex', gap: 13 }}><span className="font-mono" style={{ color: '#16805e' }}>{item[0]}</span><div><strong style={{ fontSize: 12 }}>{item[1]}</strong><div className="helper" style={{ marginTop: 4 }}>{item[2]}</div></div></div>)}</div>
-    </aside></div>
+        <button className="btn btn-primary" type="submit" disabled={create.isPending || !fileData || Number(amount) < 50 || Number(amount) > 500} style={{ width: '100%' }}>{create.isPending ? 'Sending request…' : 'Submit deposit request'}</button>
+      </form>{sent && <div className="success-box" role="status">Deposit request submitted for review.</div>}
+    </section><aside className="panel"><div className="eyebrow">How it works</div><h2 style={{ marginTop: 9 }}>A clear, manual check.</h2><p>Your submitted UTR and screenshot are matched to the payment. Approved funds are added to your unified Total Money balance.</p>
+      <div style={{ display: 'grid', gap: 15, marginTop: 21 }}>{[['01', 'Pay via UPI', 'Send the amount using the QR or UPI ID'], ['02', 'Share the proof', 'Enter the exact UTR and upload the receipt'], ['03', 'Review', 'Funds appear after approval']].map(item => <div key={item[0]} style={{ display: 'flex', gap: 13 }}><span className="font-mono" style={{ color: '#16805e' }}>{item[0]}</span><div><strong style={{ fontSize: 12 }}>{item[1]}</strong><div className="helper" style={{ marginTop: 4 }}>{item[2]}</div></div></div>)}</div>
+    </aside></div></main></AppFrame>;
+}
+
+function WithdrawalPage({ user, totalMoney }: { user: { displayName: string }; totalMoney: number }) {
+  const create = useCreateWithdrawal(); const client = useQueryClient();
+  const [amount, setAmount] = useState(''); const [upiId, setUpiId] = useState(''); const [sent, setSent] = useState(false);
+  const numeric = Number(amount) || 0; const tax = Math.round(numeric * 5) / 100; const payout = Math.round((numeric - tax) * 100) / 100;
+  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setSent(false); create.mutate({ data: { amount: numeric, upiId } }, { onSuccess: () => { setSent(true); setAmount(''); setUpiId(''); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); } }); };
+  return <AppFrame user={user}><main className="page"><div className="subpage-head"><div><div className="eyebrow">Wallet / payout</div><h1>Withdraw winnings</h1><p>Choose a payout amount and UPI ID. The 5% tax and exact net amount are shown before you submit.</p></div><Link href="/" className="btn btn-soft btn-small"><ArrowLeft size={13} />Lobby</Link></div>
+    <div className="two-col"><section className="panel"><h2>Withdrawal request</h2><p>Available Total Money: <strong>{money(totalMoney)}</strong></p><form onSubmit={submit}>
+      <div className="input-wrap"><label htmlFor="withdraw-amount">Amount to withdraw (₹)</label><input id="withdraw-amount" type="number" required min="70" max={Math.min(1000, totalMoney)} step="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder="70–1,000" /><span className="helper">Minimum ₹70 · Maximum ₹1,000</span></div>
+      <div className="input-wrap"><label htmlFor="withdraw-upi">Your UPI ID</label><input id="withdraw-upi" required minLength={5} maxLength={128} value={upiId} onChange={e => setUpiId(e.target.value)} placeholder="name@bank" /></div>
+      <div className="notice" style={{ margin: '18px 0' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Requested amount</span><strong>{money(numeric)}</strong></div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}><span>5% tax</span><strong>−{money(tax)}</strong></div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, borderTop: '1px solid #dedbcf', paddingTop: 10 }}><strong>Net payout</strong><strong>{money(payout)}</strong></div></div>
+      {create.isError && <div className="error-text" role="alert">{safeError(create.error)}</div>}<button className="btn btn-primary" type="submit" disabled={create.isPending || numeric < 70 || numeric > 1000 || numeric > totalMoney} style={{ width: '100%' }}>{create.isPending ? 'Submitting…' : 'Request withdrawal'}</button>
+    </form>{sent && <div className="success-box" role="status">Withdrawal request submitted.</div>}</section><aside className="panel"><div className="eyebrow">Tax, up front</div><h2 style={{ marginTop: 9 }}>Know your net.</h2><p>A 5% tax is applied to each cashout; the displayed net is the payout amount.</p><div className="notice green"><strong>Example</strong><br />Withdraw ₹100 → ₹5 tax → <strong>₹95 net payout</strong></div><div style={{ marginTop: 22, display: 'flex', gap: 12, alignItems: 'center', color: '#16805e' }}><ShieldCheck size={20} /><span style={{ fontSize: 11, lineHeight: 1.5 }}>Request status updates after manual processing.</span></div></aside></div>
   </main></AppFrame>;
 }
 
-function WithdrawalPage({ user, balance }: { user: { displayName: string }; balance: number }) {
-  const create = useCreateWithdrawal();
-  const client = useQueryClient();
-  const [amount, setAmount] = useState('');
-  const [upiId, setUpiId] = useState('');
-  const [sent, setSent] = useState(false);
-  const numeric = Number(amount) || 0;
-  const tax = Math.round(numeric * 5) / 100;
-  const payout = Math.round((numeric - tax) * 100) / 100;
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setSent(false);
-    create.mutate({ data: { amount: numeric, upiId } }, { onSuccess: () => {
-      setSent(true); setAmount(''); setUpiId(''); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() });
-    } });
-  };
-  return <AppFrame user={user}><main className="page"><div className="subpage-head"><div><div className="eyebrow">Wallet / payout</div><h1>Withdraw winnings</h1><p>Request a payout to your UPI ID. Your winning balance is deducted immediately when you submit, while the payout is manually processed.</p></div><Link href="/" className="btn btn-soft btn-small"><ArrowLeft size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />Lobby</Link></div>
-    <div className="two-col"><section className="panel"><h2>Withdrawal request</h2><p>Available winning balance: <strong>{money(balance)}</strong></p>
-      <form onSubmit={submit}>
-        <div className="input-wrap"><label htmlFor="withdraw-amount">Amount to withdraw (₹)</label><input id="withdraw-amount" data-testid="input-withdraw-amount" type="number" required min="1" max={Math.min(100000, balance)} value={amount} onChange={e => setAmount(e.target.value)} placeholder="Enter an amount" /></div>
-        <div className="input-wrap"><label htmlFor="withdraw-upi">Your UPI ID</label><input id="withdraw-upi" data-testid="input-withdraw-upi" required minLength={5} maxLength={128} value={upiId} onChange={e => setUpiId(e.target.value)} placeholder="name@bank" /></div>
-        <div className="notice" style={{ margin: '18px 0' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Requested amount</span><strong>{money(numeric)}</strong></div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}><span>5% processing tax</span><strong>−{money(tax)}</strong></div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, borderTop: '1px solid #dedbcf', paddingTop: 10 }}><strong>Net payout</strong><strong>{money(payout)}</strong></div></div>
-        {create.isError && <div className="error-text" role="alert">{safeError(create.error)}</div>}
-        <button className="btn btn-primary" data-testid="button-submit-withdrawal" type="submit" disabled={create.isPending || numeric < 1 || numeric > balance} style={{ width: '100%' }}>{create.isPending ? 'Submitting…' : 'Request withdrawal'}</button>
-      </form>
-      {sent && <div className="success-box" role="status">Withdrawal request submitted. The requested amount has been deducted from your winning balance.</div>}
-    </section><aside className="panel"><div className="eyebrow">The payout, step by step</div><h2 style={{ marginTop: 9 }}>Net amount up front.</h2><p>We show the 5% tax before you submit, so you know the exact payout. A team member then marks the transfer paid.</p><div className="notice green"><strong>Example</strong><br />Withdraw ₹100 → ₹5 tax → <strong>₹95 net payout</strong></div><div style={{ marginTop: 22, display: 'flex', gap: 12, alignItems: 'center', color: '#16805e' }}><ShieldCheck size={20} /><span style={{ fontSize: 11, lineHeight: 1.5 }}>Your request status will update after manual processing.</span></div></aside></div>
-  </main></AppFrame>;
-}
-
-function GamePage({ user, games, wallet, retry }: { user: { displayName: string }; games: Game[]; wallet: { depositBalance: number; winningBalance: number; bonusBalance: number }; retry: () => void }) {
-  const params = useParams<{ gameId: string }>();
-  const game = games.find(item => item.id === params.gameId);
-  const start = useStartMatch();
-  const finish = useFinishMatch();
-  const client = useQueryClient();
-  const [match, setMatch] = useState<Match | null>(null);
-  const [score, setScore] = useState(0);
+function RoomPage({ user }: { user: { displayName: string } }) {
+  const { roomId = '' } = useParams<{ roomId: string }>();
+  const client = useQueryClient(); const [, setLocation] = useLocation(); const [score, setScore] = useState(0); const [submitted, setSubmitted] = useState(false);
+  const queryKey = getGetRoomQueryKey(roomId);
+  const query = useGetRoom(roomId, { query: { queryKey, enabled: Boolean(roomId), refetchInterval: state => state.state.data?.status === 'waiting' || state.state.data?.status === 'active' ? 2500 : false } });
+  const leave = useLeaveRoom(); const submitScore = useSubmitRoomScore();
+  const room = query.data as Room | undefined;
+  const isFull = Boolean(room && room.players.length >= room.requiredSlots);
+  const canPlay = Boolean(room && room.status === 'active' && isFull);
+  const submit = () => { if (!room || !canPlay || submitted) return; submitScore.mutate({ roomId: room.id, data: { score } }, { onSuccess: () => { setSubmitted(true); client.invalidateQueries({ queryKey }); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); } }); };
+  const onLeave = () => { if (!room) return; leave.mutate({ roomId: room.id }, { onSuccess: () => { client.invalidateQueries({ queryKey }); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); setLocation('/'); } }); };
   const [cells, setCells] = useState<(string | null)[]>(Array(9).fill(null));
-  const [snake, setSnake] = useState([{ x: 4, y: 5 }, { x: 3, y: 5 }, { x: 2, y: 5 }]);
-  const [food, setFood] = useState({ x: 7, y: 5 });
-  const [finished, setFinished] = useState(false);
-  const [toast, setToast] = useState('');
-  const snakeGame = game?.id.includes('snake');
-  const clickGame = game?.id.includes('clicker');
-  const ticGame = game?.id.includes('tic');
-  const resetGame = () => { setScore(0); setCells(Array(9).fill(null)); setSnake([{ x: 4, y: 5 }, { x: 3, y: 5 }, { x: 2, y: 5 }]); setFood({ x: 7, y: 5 }); setFinished(false); };
-  const finishResult = (result: 'won' | 'lost') => {
-    if (!match || finished) return;
-    setFinished(true);
-    finish.mutate({ matchId: match.id, data: { result } }, { onSuccess: () => {
-      client.invalidateQueries({ queryKey: getGetLobbyQueryKey() });
-      setToast(result === 'won' ? 'Match won. ₹108 prize added to winning balance.' : 'Match complete. Better luck next round.');
-    } });
-  };
-  const begin = () => {
-    if (!game) return;
-    start.mutate({ data: { gameId: game.id as 'snake' | 'clicker' | 'tic-tac-toe' } }, { onSuccess: data => {
-      setMatch(data); resetGame(); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() });
-    } });
-  };
-  const moveSnake = (dir: { x: number; y: number }) => {
-    if (!match || finished) return;
-    const head = snake[0];
-    const next = { x: (head.x + dir.x + 10) % 10, y: (head.y + dir.y + 10) % 10 };
-    const ate = next.x === food.x && next.y === food.y;
-    const nextSnake = [next, ...snake.slice(0, ate ? undefined : -1)];
-    setSnake(nextSnake);
-    if (ate) {
-      const nextScore = score + 1; setScore(nextScore);
-      setFood({ x: (food.x + 3) % 10, y: (food.y + 4) % 10 });
-      if (nextScore >= 5) finishResult('won');
-    }
-  };
-  const ticWinner = (board: (string | null)[]) => {
-    const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-    return wins.some(line => board[line[0]] && board[line[0]] === board[line[1]] && board[line[1]] === board[line[2]]);
-  };
-  const playTic = (index: number) => {
-    if (cells[index] || !match || finished) return;
-    const playerBoard = [...cells]; playerBoard[index] = 'X'; setCells(playerBoard);
-    if (ticWinner(playerBoard)) { finishResult('won'); return; }
-    if (playerBoard.every(Boolean)) { finishResult('lost'); return; }
-    const opponentIndex = playerBoard.findIndex(cell => !cell);
-    const opponentBoard = [...playerBoard]; opponentBoard[opponentIndex] = 'O'; setCells(opponentBoard);
-    if (ticWinner(opponentBoard)) { finishResult('lost'); return; }
-    if (opponentBoard.every(Boolean)) finishResult('lost');
-  };
-  if (!game) return <AppFrame user={user}><main className="page"><QueryError message="That game could not be found in the lobby." retry={retry} /></main></AppFrame>;
-  const fundsEnough = wallet.depositBalance + wallet.bonusBalance >= 60 && wallet.depositBalance >= 54 && wallet.bonusBalance >= 6;
-  return <AppFrame user={user}><main className="page game-shell">
-    <div className="subpage-head"><div><div className="eyebrow">Skill match / {game.name}</div><h1>{game.name}</h1><p>{game.description}</p></div><Link href="/" className="btn btn-soft btn-small"><ArrowLeft size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />Lobby</Link></div>
-    <section className="play-board">
-      {!match ? <div style={{ maxWidth: 500, margin: '12px auto', textAlign: 'center' }}>
-        <div className={`game-art ${snakeGame ? 'snake' : clickGame ? 'clicker' : 'tic'}`} style={{ borderRadius: 16, height: 150, marginBottom: 25 }}><span className="game-symbol">{snakeGame ? 'SNAKE' : clickGame ? 'TAP!' : 'X / O'}</span></div>
-        <div className="eyebrow">Entry breakdown</div><h2 style={{ font: '600 27px Space Grotesk', margin: '8px 0' }}>₹60 in. ₹108 to win.</h2>
-        <p>Exactly ₹54 comes from deposit balance + ₹6 from bonus balance. Prize is credited to winning balance.</p>
-        {!fundsEnough && <div className="notice" style={{ margin: '15px 0' }}>You need at least ₹54 deposit balance and ₹6 bonus balance for this match. <Link href="/add-cash" style={{ color: '#16805e', fontWeight: 800 }}>Add cash</Link></div>}
-        {start.isError && <div className="error-text">{safeError(start.error)}</div>}
-        <button className="btn btn-primary" disabled={!fundsEnough || start.isPending} onClick={begin} data-testid="button-start-match" style={{ minWidth: 190 }}>{start.isPending ? 'Finding your match…' : 'Pay ₹60 and play'}</button>
-      </div> :
-      <div style={{ maxWidth: 560, margin: '0 auto' }}>
-        <div className="play-top"><div><div className="eyebrow">Match vs {match.opponentName}</div><div className="play-score">{snakeGame ? `Food ${score}/5` : clickGame ? `Taps ${score}/30` : 'Your turn · X'}</div></div><div className="status pending">Prize {money(match.prize)}</div></div>
-        {snakeGame && <><div className="snake-grid" aria-label="Snake game board">{Array.from({ length: 100 }, (_, i) => { const x = i % 10; const y = Math.floor(i / 10); const isBody = snake.some(part => part.x === x && part.y === y); const isFood = food.x === x && food.y === y; return <div key={i} className={`snake-cell${isBody ? ' body' : ''}${isFood ? ' food' : ''}`} />; })}</div>
-          <div className="direction-pad"><span /><button aria-label="Move up" onClick={() => moveSnake({ x: 0, y: -1 })}>↑</button><span /><button aria-label="Move left" onClick={() => moveSnake({ x: -1, y: 0 })}>←</button><button aria-label="Move down" onClick={() => moveSnake({ x: 0, y: 1 })}>↓</button><button aria-label="Move right" onClick={() => moveSnake({ x: 1, y: 0 })}>→</button></div><p style={{ textAlign: 'center' }}>Guide the snake to the gold dot. Collect five to win.</p></>}
-        {clickGame && <><button className="click-target" aria-label="Tap to score" onClick={() => { const next = score + 1; setScore(next); if (next >= 30) finishResult('won'); }} data-testid="button-click-target">TAP</button><p style={{ textAlign: 'center' }}>Reach 30 taps to claim the match.</p></>}
-        {ticGame && <><div className="ttt-grid">{cells.map((cell, index) => <button className="ttt-cell" key={index} onClick={() => playTic(index)} aria-label={`Square ${index + 1}${cell ? ` ${cell}` : ''}`} data-testid={`button-ttt-square-${index}`}>{cell}</button>)}</div><p style={{ textAlign: 'center' }}>You are X. Play against a local opponent.</p></>}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 }}>
-          <button className="btn btn-soft btn-small" onClick={() => finishResult('lost')} disabled={finish.isPending || finished}>End match</button>
-          {finish.isPending && <span className="helper">Settling match…</span>}
-        </div>
-        {finished && <div className="success-box" style={{ textAlign: 'center' }}>Match result submitted. {finish.isError && <span className="error-text">{safeError(finish.error)}</span>}</div>}
-      </div>}
-    </section>
-    {toast && <div role="status" className="toast-message"><Check size={14} style={{ verticalAlign: 'middle', marginRight: 8 }} />{toast}<button onClick={() => setToast('')} aria-label="Dismiss" style={{ background: 'none', color: 'inherit', border: 0, marginLeft: 10 }}><X size={13} /></button></div>}
+  const gameId = room?.gameId ?? ''; const gameIsTic = gameId.includes('tic'); const gameIsSnake = gameId.includes('snake');
+  if (query.isLoading) return <AppFrame user={user}><LoadingState /></AppFrame>;
+  if (query.isError || !room) return <AppFrame user={user}><main className="page"><QueryError retry={() => query.refetch()} message={query.isError ? safeError(query.error) : 'This room could not be found.'} /></main></AppFrame>;
+  const scoreClick = () => setScore(value => value + 1);
+  return <AppFrame user={user}><main className="page room-shell"><div className="subpage-head"><div><div className="eyebrow">Room / {room.gameName}</div><h1>{room.status === 'finished' ? 'Match complete.' : room.gameName}</h1><p>Room entry {money(room.entryFee)} · winner receives {money(room.prize)} · {room.requiredSlots} real players</p></div><Link href="/" className="btn btn-soft btn-small"><ArrowLeft size={13} />Lobby</Link></div>
+    {room.status === 'finished' ? <section className="panel queue-panel"><Trophy size={30} color="#16805e" /><div className="eyebrow" style={{ marginTop: 14 }}>Final result</div><h2 style={{ marginTop: 8 }}>{room.winnerName ? `${room.winnerName} wins` : 'Match settled'}</h2><p>The result has been recorded for this real-player room.</p><Link href="/" className="btn btn-primary">Back to lobby</Link></section> :
+    !canPlay ? <section className="panel queue-panel"><div className="queue-orbit" /><div className="eyebrow">Real-player matchmaking</div><h2 style={{ marginTop: 8 }}>Searching for players...</h2><p>This match starts only after every player slot is filled. No bots, no early starts.</p><div className="slots">{Array.from({ length: room.requiredSlots }, (_, i) => <span key={i} className={`slot${room.players[i] ? ' filled' : ''}`}>{room.players[i] ? room.players[i].displayName.slice(0, 1).toUpperCase() : i + 1}</span>)}</div><p className="helper">{room.players.length} of {room.requiredSlots} players joined</p>
+      {room.status === 'waiting' && <button className="btn btn-soft" onClick={onLeave} disabled={leave.isPending}>{leave.isPending ? 'Leaving…' : 'Leave queue'}</button>}
+      {(leave.isError || query.isError) && <div className="error-text">{leave.isError ? safeError(leave.error) : safeError(query.error)}</div>}
+    </section> :
+    <section className="play-board"><div className="play-top"><div><div className="eyebrow">{room.players.length} players present</div><div className="play-score">{room.userSubmittedScore || submitted ? 'Score submitted' : `Your score · ${score}`}</div></div><Status value={room.status} /></div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', margin: '20px auto' }}>
+        {gameIsTic ? <div><div className="ttt-grid">{cells.map((cell, index) => <button key={index} className="ttt-cell" disabled={Boolean(cell) || submitted} onClick={() => { const next = [...cells]; next[index] = 'X'; setCells(next); setScore(next.filter(Boolean).length); }} aria-label={`Square ${index + 1}`}>{cell}</button>)}</div><p style={{ textAlign: 'center' }}>Select your move, then submit your score to the room.</p></div> :
+        gameIsSnake ? <div><div className="snake-grid" aria-label="Snake practice board">{Array.from({ length: 100 }, (_, i) => <div key={i} className={`snake-cell${i < score ? ' body' : ''}${i === Math.min(99, score + 10) ? ' food' : ''}`} />)}</div><div className="direction-pad"><span /><button onClick={scoreClick} disabled={submitted} aria-label="Move up">↑</button><span /><button onClick={scoreClick} disabled={submitted} aria-label="Move left">←</button><button onClick={scoreClick} disabled={submitted} aria-label="Move down">↓</button><button onClick={scoreClick} disabled={submitted} aria-label="Move right">→</button></div><p style={{ textAlign: 'center' }}>Practice the controls, then submit your score.</p></div> :
+        <div style={{ textAlign: 'center' }}><button className="click-target" aria-label="Tap to score" disabled={submitted} onClick={scoreClick}>{submitted ? 'SENT' : 'TAP'}</button><p>Tap to build your score, then submit it.</p></div>}
+      </div>
+      {submitScore.isError && <div className="error-text" role="alert">{safeError(submitScore.error)}</div>}
+      <div style={{ textAlign: 'center' }}><button className="btn btn-primary" onClick={submit} disabled={submitScore.isPending || submitted || room.userSubmittedScore}>{submitScore.isPending ? 'Submitting…' : submitted || room.userSubmittedScore ? 'Score submitted' : 'Submit score'}</button></div>
+    </section>}
   </main></AppFrame>;
 }
 
-function AdminTable({ title, rows, kind, pendingOnly, onDecision, onPaid, busyId }: {
-  title: string; rows: Transaction[]; kind: 'deposit' | 'withdrawal'; pendingOnly?: boolean;
-  onDecision: (id: string, decision: 'approve' | 'reject') => void; onPaid: (id: string) => void; busyId: string;
+function QrCode({ upiId, amount }: { upiId: string; amount: number }) {
+  const [src, setSrc] = useState('');
+  const payload = `upi://pay?pa=${encodeURIComponent(upiId)}&am=${encodeURIComponent(String(amount))}&cu=INR&tn=AppPayout`;
+  useEffect(() => { let live = true; QRCode.toDataURL(payload, { width: 160, margin: 1, errorCorrectionLevel: 'M' }).then(data => { if (live) setSrc(data); }).catch(() => { if (live) setSrc(''); }); return () => { live = false; }; }, [payload]);
+  return src ? <img className="qr" src={src} alt={`UPI payout QR for ${upiId}, ${money(amount)}`} /> : <div className="qr" aria-label="Generating UPI QR code" />;
+}
+
+function AdminRequestTable({ title, rows, kind, onDecision, onPaid, busyId }: {
+  title: string; rows: Transaction[]; kind: 'deposit' | 'withdrawal'; onDecision: (id: string, decision: 'approve' | 'reject') => void; onPaid: (id: string) => void; busyId: string;
 }) {
-  const shown = pendingOnly ? rows.filter(row => row.status === 'pending') : rows;
-  return <section className="panel admin-block"><h2>{title}</h2>{shown.length ? <>
-    <div className="admin-row admin-row-head"><span>Player</span><span>Amount</span><span>Details</span><span>Status</span><span>Operations</span></div>
-    {shown.map(row => <div className="admin-row" key={row.id} data-testid={`admin-row-${row.id}`}>
-      <span><strong>{row.userName}</strong><br /><span className="helper">{dateLabel(row.createdAt)}</span></span>
-      <span>{money(row.amount)}</span>
-      <span>{kind === 'deposit' ? <>{`UTR ${row.utr || '—'}`}{row.screenshotDataUrl && <><br /><a href={row.screenshotDataUrl} target="_blank" rel="noreferrer" style={{ color: '#16805e', fontWeight: 800 }}>View proof</a></>}</> : `${row.upiId || '—'} · net ${money(row.payout ?? row.amount - (row.tax ?? 0))}`}</span>
-      <Status value={row.status} />
-      <span className="admin-buttons">{row.status === 'pending' && (kind === 'deposit' ? <>
-        <button className="btn btn-primary btn-small" disabled={busyId === row.id} onClick={() => onDecision(row.id, 'approve')} data-testid={`button-approve-${row.id}`}>Approve</button>
-        <button className="btn btn-danger btn-small" disabled={busyId === row.id} onClick={() => onDecision(row.id, 'reject')} data-testid={`button-reject-${row.id}`}>Reject</button>
-      </> : <button className="btn btn-primary btn-small" disabled={busyId === row.id} onClick={() => onPaid(row.id)} data-testid={`button-paid-${row.id}`}>Mark paid</button>)}</span>
+  return <section className="panel admin-block"><h2>{title}</h2>{rows.length ? <>
+    <div className="admin-row admin-row-head"><span>Player</span><span>Amount</span><span>Details / payout QR</span><span>Status</span><span>Operations</span></div>
+    {rows.map(row => <div className="admin-row" key={row.id} data-testid={`admin-row-${row.id}`}>
+      <span><strong>{row.userName}</strong><br /><span className="helper">{dateLabel(row.createdAt)}</span></span><span>{money(row.amount)}</span>
+      <span>{kind === 'deposit' ? <>{`UTR ${row.utr || '—'}`}{row.screenshotDataUrl && <><br /><a href={row.screenshotDataUrl} target="_blank" rel="noreferrer" style={{ color: '#16805e', fontWeight: 800 }}>View proof</a></>}</> :
+        <><strong>{row.upiId || '—'}</strong><br /><span className="helper">Tax {money(row.tax)} · net {money(row.payout)}</span><br />{row.upiId && <QrCode upiId={row.upiId} amount={row.payout} />}</>}</span>
+      <Status value={row.status} /><span className="admin-buttons">{row.status === 'pending' && (kind === 'deposit' ? <><button className="btn btn-primary btn-small" disabled={busyId === row.id} onClick={() => onDecision(row.id, 'approve')}>Approve</button><button className="btn btn-danger btn-small" disabled={busyId === row.id} onClick={() => onDecision(row.id, 'reject')}>Reject</button></> : <button className="btn btn-primary btn-small" disabled={busyId === row.id} onClick={() => onPaid(row.id)}>Mark paid</button>)}</span>
     </div>)}
-  </> : <div className="empty">{pendingOnly ? 'No pending requests. The queue is clear.' : 'No requests to show yet.'}</div>}</section>;
+  </> : <div className="empty">No requests to show yet.</div>}</section>;
 }
 
 function AdminPage({ user, dashboard, retry }: { user: { displayName: string }; dashboard: AdminDashboard; retry: () => void }) {
-  const decide = useDecideDeposit();
-  const complete = useCompleteWithdrawal();
-  const client = useQueryClient();
-  const [busyId, setBusyId] = useState('');
-  const [error, setError] = useState('');
-  const done = (id: string) => { setBusyId(''); client.invalidateQueries({ queryKey: getGetAdminDashboardQueryKey() }); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); };
-  const onDecision = (id: string, decision: 'approve' | 'reject') => {
-    setBusyId(id); setError('');
-    decide.mutate({ transactionId: id, data: { decision } }, { onSuccess: () => done(id), onError: err => { setBusyId(''); setError(safeError(err)); } });
-  };
-  const onPaid = (id: string) => {
-    setBusyId(id); setError('');
-    complete.mutate({ transactionId: id }, { onSuccess: () => done(id), onError: err => { setBusyId(''); setError(safeError(err)); } });
-  };
-  return <AppFrame user={user}><main className="page">
-    <div className="subpage-head"><div><div className="eyebrow">Operations / manual review</div><h1>Admin desk</h1><p>Review payment proofs and reconcile withdrawals. Every decision updates the player ledger.</p></div><button className="btn btn-soft btn-small" onClick={retry}><RefreshCw size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />Refresh</button></div>
-    <div className="admin-stats"><div className="stat-box"><span>Game rake</span><strong>{money(dashboard.totalGameRake)}</strong></div><div className="stat-box"><span>Withdrawal taxes</span><strong>{money(dashboard.totalWithdrawalTaxes)}</strong></div><div className="stat-box"><span>Pending requests</span><strong>{dashboard.pendingCount}</strong></div></div>
+  const decide = useDecideDeposit(); const complete = useCompleteWithdrawal(); const updateSettings = useUpdateAdminSettings(); const client = useQueryClient();
+  const [busyId, setBusyId] = useState(''); const [error, setError] = useState(''); const [saved, setSaved] = useState(false);
+  const [adminUpiId, setAdminUpiId] = useState(dashboard.settings.adminUpiId); const [adminQrCodeUrl, setAdminQrCodeUrl] = useState(dashboard.settings.adminQrCodeUrl);
+  useEffect(() => { setAdminUpiId(dashboard.settings.adminUpiId); setAdminQrCodeUrl(dashboard.settings.adminQrCodeUrl); }, [dashboard.settings.adminUpiId, dashboard.settings.adminQrCodeUrl]);
+  const refresh = () => { client.invalidateQueries({ queryKey: getGetAdminDashboardQueryKey() }); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); setBusyId(''); };
+  const onDecision = (id: string, decision: 'approve' | 'reject') => { setBusyId(id); setError(''); decide.mutate({ transactionId: id, data: { decision } }, { onSuccess: refresh, onError: err => { setBusyId(''); setError(safeError(err)); } }); };
+  const onPaid = (id: string) => { setBusyId(id); setError(''); complete.mutate({ transactionId: id }, { onSuccess: refresh, onError: err => { setBusyId(''); setError(safeError(err)); } }); };
+  const saveSettings = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setSaved(false); updateSettings.mutate({ data: { adminUpiId, adminQrCodeUrl } }, { onSuccess: () => { setSaved(true); client.invalidateQueries({ queryKey: getGetAdminDashboardQueryKey() }); client.invalidateQueries({ queryKey: getGetLobbyQueryKey() }); } }); };
+  const stats = [
+    ['2-player · ₹20 rake', dashboard.rake20Player2], ['2-player · ₹50 rake', dashboard.rake50Player2],
+    ['4-player · ₹20 rake', dashboard.rake20Player4], ['4-player · ₹50 rake', dashboard.rake50Player4],
+    ['Withdrawal tax', dashboard.totalWithdrawalTax], ['Pending requests', dashboard.pendingCount],
+  ];
+  return <AppFrame user={user}><main className="page"><div className="subpage-head"><div><div className="eyebrow">Operations / manual review</div><h1>Admin desk</h1><p>Review wallet requests, review revenue by room format, and maintain payment settings.</p></div><button className="btn btn-soft btn-small" onClick={retry}><RefreshCw size={13} />Refresh</button></div>
+    <div className="admin-stats">{stats.map(([label, value]) => <div className="stat-box" key={label}><span>{label}</span><strong>{typeof value === 'number' && label !== 'Pending requests' ? money(value) : value}</strong></div>)}</div>
     {error && <div className="error-text" role="alert">{error}</div>}
-    <AdminTable title="Deposit requests" rows={dashboard.deposits} kind="deposit" onDecision={onDecision} onPaid={onPaid} busyId={busyId} />
-    <AdminTable title="Withdrawal requests" rows={dashboard.withdrawals} kind="withdrawal" onDecision={onDecision} onPaid={onPaid} busyId={busyId} />
+    <AdminRequestTable title="Deposit requests" rows={dashboard.deposits} kind="deposit" onDecision={onDecision} onPaid={onPaid} busyId={busyId} />
+    <AdminRequestTable title="Withdrawal requests" rows={dashboard.withdrawals} kind="withdrawal" onDecision={onDecision} onPaid={onPaid} busyId={busyId} />
+    <section className="panel"><div className="eyebrow">System settings</div><h2 style={{ marginTop: 8 }}>Payment destination</h2><p>These details are shown on the deposit screen.</p><form onSubmit={saveSettings}>
+      <div className="input-wrap"><label htmlFor="admin-upi">Admin UPI ID</label><input id="admin-upi" required minLength={5} maxLength={128} value={adminUpiId} onChange={e => setAdminUpiId(e.target.value)} /></div>
+      <div className="input-wrap"><label htmlFor="admin-qr">Admin QR code URL or data URL</label><input id="admin-qr" required minLength={1} maxLength={2048} value={adminQrCodeUrl} onChange={e => setAdminQrCodeUrl(e.target.value)} /></div>
+      <button className="btn btn-primary" type="submit" disabled={updateSettings.isPending}>{updateSettings.isPending ? 'Saving…' : 'Save payment settings'}</button>{updateSettings.isError && <div className="error-text">{safeError(updateSettings.error)}</div>}{saved && <div className="success-box">Payment settings saved.</div>}
+    </form></section>
   </main></AppFrame>;
 }
 
-function NotFoundPage() {
-  return <AppFrame user={null}><main className="page"><div className="panel" style={{ margin: '70px auto', textAlign: 'center', maxWidth: 500 }}><div className="eyebrow">404 / no match</div><h1 className="font-display">This page is out of play.</h1><p>The page you are looking for does not exist.</p><Link href="/" className="btn btn-primary">Back to lobby</Link></div></main></AppFrame>;
-}
+function NotFoundPage() { return <AppFrame user={null}><main className="page"><section className="panel" style={{ margin: '70px auto', textAlign: 'center', maxWidth: 500 }}><div className="eyebrow">404 / no match</div><h1 className="font-display">This page is out of play.</h1><p>The page you are looking for does not exist.</p><Link href="/" className="btn btn-primary">Back to lobby</Link></section></main></AppFrame>; }
 
 function RoutedApp() {
-  const session = useGetSession();
-  const signedIn = Boolean(session.data?.user);
+  const session = useGetSession(); const user = session.data?.user ?? null; const signedIn = Boolean(user); const [, setLocation] = useLocation(); const [path] = useLocation();
   const lobby = useGetLobby({ query: { enabled: signedIn, queryKey: getGetLobbyQueryKey(), retry: false } });
-  const isAdmin = session.data?.user?.role === 'admin';
-  const admin = useGetAdminDashboard({ query: { enabled: isAdmin, queryKey: getGetAdminDashboardQueryKey(), retry: false } });
-  const [, setLocation] = useLocation();
-  const [path] = useLocation();
-  const user = session.data?.user ?? null;
-  const sessionFail = session.isError && !signedIn;
-  const authLoading = session.isLoading;
-  const afterAuth = () => { setLocation('/'); };
-  if (authLoading) return <AppFrame user={null}><LoadingState /></AppFrame>;
-  if (!signedIn || sessionFail) return <AuthScreen onAuth={afterAuth} />;
-  if (path === '/admin' && !isAdmin) return <AppFrame user={user}><main className="page"><div className="panel" style={{ margin: '50px auto', maxWidth: 520 }}><div className="eyebrow">Restricted area</div><h2>Admin access only</h2><p>This operations desk is available to admin accounts.</p><Link href="/" className="btn btn-primary">Return to lobby</Link></div></main></AppFrame>;
+  const admin = useGetAdminDashboard({ query: { enabled: user?.role === 'admin', queryKey: getGetAdminDashboardQueryKey(), retry: false } });
+  if (session.isLoading) return <AppFrame user={null}><LoadingState /></AppFrame>;
+  if (!signedIn) return <AuthScreen onAuth={() => setLocation('/')} />;
+  if (path === '/admin' && user?.role !== 'admin') return <AppFrame user={user}><main className="page"><section className="panel" style={{ margin: '50px auto', maxWidth: 520 }}><div className="eyebrow">Restricted area</div><h2>Admin access only</h2><p>This operations desk is available to admin accounts.</p><Link href="/" className="btn btn-primary">Return to lobby</Link></section></main></AppFrame>;
   if (path === '/admin') {
     if (admin.isLoading || !admin.data) return <AppFrame user={user}><LoadingState /></AppFrame>;
     if (admin.isError) return <AppFrame user={user}><main className="page"><QueryError retry={() => admin.refetch()} message={safeError(admin.error)} /></main></AppFrame>;
@@ -386,16 +261,14 @@ function RoutedApp() {
   if (lobby.isError) return <AppFrame user={user}><main className="page"><QueryError retry={() => lobby.refetch()} message={safeError(lobby.error)} /></main></AppFrame>;
   const data = lobby.data;
   return <Switch>
-    <Route path="/"><Lobby user={data.user} wallet={data.wallet} games={data.games} transactions={data.transactions} matches={data.matches} retry={() => lobby.refetch()} /></Route>
-    <Route path="/add-cash"><DepositPage user={data.user} balance={data.wallet.depositBalance} /></Route>
-    <Route path="/withdraw"><WithdrawalPage user={data.user} balance={data.wallet.winningBalance} /></Route>
-    <Route path="/games/:gameId"><GamePage user={data.user} games={data.games} wallet={data.wallet} retry={() => lobby.refetch()} /></Route>
+    <Route path="/"><Lobby user={data.user} wallet={data.wallet} games={data.games} transactions={data.transactions} activeRoom={data.activeRoom} retry={() => lobby.refetch()} /></Route>
+    <Route path="/add-cash"><DepositPage user={data.user} totalMoney={data.wallet.totalMoney} settings={data.settings} /></Route>
+    <Route path="/withdraw"><WithdrawalPage user={data.user} totalMoney={data.wallet.totalMoney} /></Route>
+    <Route path="/rooms/:roomId"><RoomPage user={data.user} /></Route>
     <Route component={NotFoundPage} />
   </Switch>;
 }
 
-function App() {
-  return <QueryClientProvider client={queryClient}><RoutedApp /></QueryClientProvider>;
-}
+function App() { return <QueryClientProvider client={queryClient}><RoutedApp /></QueryClientProvider>; }
 
 export default App;

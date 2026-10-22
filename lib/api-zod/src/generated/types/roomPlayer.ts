@@ -5,8 +5,9 @@
  * API for the Cash Game Lobby prototype.
  * OpenAPI spec version: 0.1.0
  */
-import type { MatchFinishInputResult } from './matchFinishInputResult';
 
-export interface MatchFinishInput {
-  result: MatchFinishInputResult;
+export interface RoomPlayer {
+  userId: string;
+  displayName: string;
+  hasSubmittedScore: boolean;
 }

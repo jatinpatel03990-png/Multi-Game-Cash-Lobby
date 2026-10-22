@@ -5,12 +5,17 @@
  * API for the Cash Game Lobby prototype.
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminSettings } from './adminSettings';
 import type { Transaction } from './transaction';
 
 export interface AdminDashboard {
-  totalGameRake: number;
-  totalWithdrawalTaxes: number;
+  rake20Player2: number;
+  rake50Player2: number;
+  rake20Player4: number;
+  rake50Player4: number;
+  totalWithdrawalTax: number;
   pendingCount: number;
   deposits: Transaction[];
   withdrawals: Transaction[];
+  settings: AdminSettings;
 }

@@ -16,24 +16,31 @@ import {
   DecideDepositBody,
   DecideDepositParams,
   DecideDepositResponse,
-  FinishMatchBody,
-  FinishMatchParams,
-  FinishMatchResponse,
   GetAdminDashboardResponse,
   GetLobbyResponse,
+  GetRoomParams,
+  GetRoomResponse,
   GetSessionResponse,
+  JoinRoomBody,
+  JoinRoomResponse,
+  LeaveRoomParams,
+  LeaveRoomResponse,
   SignInBody,
   SignInResponse,
   SignOutResponse,
   SignUpBody,
   SignUpResponse,
-  StartMatchBody,
-  StartMatchResponse,
+  SubmitRoomScoreBody,
+  SubmitRoomScoreParams,
+  SubmitRoomScoreResponse,
+  UpdateAdminSettingsBody,
+  UpdateAdminSettingsResponse,
 } from "@workspace/api-zod";
 import {
-  type CashStore,
-  type MatchRecord,
+  type AdminSettings,
   type PlayerRecord,
+  type RoomOptionId,
+  type RoomRecord,
   type TransactionRecord,
   readCashStore,
   updateCashStore,
@@ -42,40 +49,22 @@ import {
 const router: IRouter = Router();
 const COOKIE_NAME = "cash_lobby_session";
 const SESSION_DAYS = 7;
-const ENTRY_FEE = 60;
-const BONUS_ENTRY = 6;
-const DEPOSIT_ENTRY = ENTRY_FEE - BONUS_ENTRY;
-const WIN_PRIZE = 108;
-const PLATFORM_RAKE = 12;
-const OPPONENT_NAMES = ["PixelFox", "NeonAce", "QuickByte", "GridRunner"];
 const games = [
-  {
-    id: "snake",
-    name: "Snake Sprint",
-    description: "Outlast the clock. Collect more than your rival.",
-    players: "1v1",
-    entryFee: ENTRY_FEE,
-    prize: WIN_PRIZE,
-  },
-  {
-    id: "clicker",
-    name: "Tap Rush",
-    description: "Fast fingers, focused for ten seconds.",
-    players: "1v1",
-    entryFee: ENTRY_FEE,
-    prize: WIN_PRIZE,
-  },
-  {
-    id: "tic-tac-toe",
-    name: "Tic-Tac-Toe",
-    description: "A quick classic against a simulated rival.",
-    players: "1v1",
-    entryFee: ENTRY_FEE,
-    prize: WIN_PRIZE,
-  },
+  { id: "snake", name: "Snake Sprint", description: "Collect, survive, and score." },
+  { id: "clicker", name: "Tap Rush", description: "Fast fingers and a short timer." },
+  { id: "tic-tac-toe", name: "Tic-Tac-Toe", description: "A quick strategy classic." },
 ];
-
+const roomOptions = [
+  { id: "duo20", title: "2-Player 1v1 · ₹20", playerCount: 2, entryFee: 20, prize: 32.4, adminKeeps: 7.6 },
+  { id: "duo50", title: "2-Player 1v1 · ₹50", playerCount: 2, entryFee: 50, prize: 81, adminKeeps: 19 },
+  { id: "quad20", title: "4-Player · ₹20", playerCount: 4, entryFee: 20, prize: 60, adminKeeps: 20 },
+  { id: "quad50", title: "4-Player · ₹50", playerCount: 4, entryFee: 50, prize: 150, adminKeeps: 50 },
+] as const;
 const authAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
 
 function publicPlayer(user: PlayerRecord) {
   return {
@@ -118,9 +107,7 @@ function applyAuthRateLimit(req: Request, res: Response): boolean {
 
 async function currentUser(req: Request): Promise<PlayerRecord | undefined> {
   const token = req.cookies?.[COOKIE_NAME];
-  if (typeof token !== "string" || token.length < 32) {
-    return undefined;
-  }
+  if (typeof token !== "string" || token.length < 32) return undefined;
   const hash = tokenHash(token);
   const store = await readCashStore();
   const session = store.sessions.find(
@@ -129,14 +116,7 @@ async function currentUser(req: Request): Promise<PlayerRecord | undefined> {
   return session ? store.users.find((user) => user.id === session.userId) : undefined;
 }
 
-function cleanTransactions(items: TransactionRecord[]) {
-  return items.map((item) => ({ ...item }));
-}
-
-function makeSession(store: CashStore, user: PlayerRecord): {
-  token: string;
-  response: { user: ReturnType<typeof publicPlayer>; wallet: PlayerRecord["wallet"] };
-} {
+function makeSession(store: Awaited<ReturnType<typeof readCashStore>>, user: PlayerRecord) {
   const token = randomBytes(32).toString("base64url");
   store.sessions = store.sessions.filter(
     (session) => Date.parse(session.expiresAt) > Date.now(),
@@ -144,9 +124,7 @@ function makeSession(store: CashStore, user: PlayerRecord): {
   store.sessions.push({
     tokenHash: tokenHash(token),
     userId: user.id,
-    expiresAt: new Date(
-      Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
-    ).toISOString(),
+    expiresAt: new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString(),
   });
   return {
     token,
@@ -170,8 +148,35 @@ function requireAdmin(user: PlayerRecord | undefined, res: Response): user is Pl
   return true;
 }
 
-function isWholeRupee(value: number): boolean {
-  return Number.isFinite(value) && Number.isInteger(value) && value > 0;
+function createRoomResponse(room: RoomRecord, userId: string) {
+  return {
+    id: room.id,
+    gameId: room.gameId,
+    gameName: room.gameName,
+    optionId: room.optionId,
+    entryFee: room.entryFee,
+    playerCount: room.players.length,
+    requiredSlots: room.requiredSlots,
+    prize: room.prize,
+    status: room.status,
+    winnerName: room.winnerName,
+    players: room.players.map((player) => ({
+      userId: player.userId,
+      displayName: player.displayName,
+      hasSubmittedScore: player.score !== null,
+    })),
+    createdAt: room.createdAt,
+    userSubmittedScore:
+      room.players.find((player) => player.userId === userId)?.score !== null,
+  };
+}
+
+function publicTransaction(transaction: TransactionRecord) {
+  return { ...transaction };
+}
+
+function roundMoneyRange(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && Math.round(value * 100) === value * 100;
 }
 
 router.get("/auth/session", async (req, res): Promise<void> => {
@@ -193,9 +198,8 @@ router.post("/auth/signup", async (req, res): Promise<void> => {
     return;
   }
   const email = parsed.data.email.trim().toLowerCase();
-  const password = parsed.data.password;
   const salt = randomBytes(16).toString("hex");
-  const passwordHash = scryptSync(password, salt, 64).toString("hex");
+  const passwordHash = scryptSync(parsed.data.password, salt, 64).toString("hex");
   const result = await updateCashStore((store) => {
     if (store.users.some((user) => user.email === email)) return null;
     const adminEmails = (process.env.ADMIN_EMAILS ?? "")
@@ -214,14 +218,10 @@ router.post("/auth/signup", async (req, res): Promise<void> => {
       role,
       passwordHash,
       salt,
-      wallet: {
-        depositBalance: 0,
-        winningBalance: 0,
-        bonusBalance: 10,
-      },
+      wallet: { totalMoney: 10 },
     };
     store.users.push(user);
-    return { user, ...makeSession(store, user) };
+    return { ...makeSession(store, user) };
   });
   if (!result) {
     res.status(409).json({ error: "An account with this email already exists." });
@@ -239,25 +239,26 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
   const email = parsed.data.email.trim().toLowerCase();
-  const found = await updateCashStore((store) => {
+  const result = await updateCashStore((store) => {
     const user = store.users.find((entry) => entry.email === email);
-    const salt = user?.salt ?? "invalid-user-dummy-salt";
-    const expected = user?.passwordHash ?? "0".repeat(128);
-    const actual = scryptSync(parsed.data.password, salt, 64);
-    const expectedBuffer = Buffer.from(expected, "hex");
+    const actual = scryptSync(
+      parsed.data.password,
+      user?.salt ?? "invalid-user-dummy-salt",
+      64,
+    );
+    const expected = Buffer.from(user?.passwordHash ?? "0".repeat(128), "hex");
     const valid =
       Boolean(user) &&
-      expectedBuffer.length === actual.length &&
-      timingSafeEqual(actual, expectedBuffer);
-    if (!valid || !user) return null;
-    return { ...makeSession(store, user) };
+      expected.length === actual.length &&
+      timingSafeEqual(actual, expected);
+    return valid && user ? makeSession(store, user) : null;
   });
-  if (!found) {
+  if (!result) {
     res.status(401).json({ error: "Email or password is incorrect." });
     return;
   }
-  res.cookie(COOKIE_NAME, found.token, sessionCookieOptions());
-  res.json(SignInResponse.parse(found.response));
+  res.cookie(COOKIE_NAME, result.token, sessionCookieOptions());
+  res.json(SignInResponse.parse(result.response));
 });
 
 router.post("/auth/logout", async (req, res): Promise<void> => {
@@ -265,9 +266,7 @@ router.post("/auth/logout", async (req, res): Promise<void> => {
   if (typeof token === "string") {
     const hash = tokenHash(token);
     await updateCashStore((store) => {
-      store.sessions = store.sessions.filter(
-        (session) => session.tokenHash !== hash,
-      );
+      store.sessions = store.sessions.filter((session) => session.tokenHash !== hash);
     });
   }
   res.clearCookie(COOKIE_NAME, {
@@ -283,115 +282,231 @@ router.get("/lobby", async (req, res): Promise<void> => {
   const user = await currentUser(req);
   if (!requirePlayer(user, res)) return;
   const store = await readCashStore();
-  const response = {
-    user: publicPlayer(user),
-    wallet: user.wallet,
-    games,
-    transactions: cleanTransactions(
-      store.transactions
+  const room = store.rooms
+    .filter((item) => item.players.some((player) => player.userId === user.id))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  res.json(
+    GetLobbyResponse.parse({
+      user: publicPlayer(user),
+      wallet: user.wallet,
+      games,
+      roomOptions,
+      activeRoom: room ? createRoomResponse(room, user.id) : null,
+      transactions: store.transactions
         .filter((item) => item.userId === user.id)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .slice(0, 10),
-    ),
-    matches: store.matches
-      .filter((item) => item.userId === user.id)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, 10)
-      .map(({ userId: _userId, ...match }) => match),
-  };
-  res.json(GetLobbyResponse.parse(response));
+        .slice(0, 10)
+        .map(publicTransaction),
+      settings: store.settings,
+    }),
+  );
 });
 
-router.post("/matches", async (req, res): Promise<void> => {
+router.post("/rooms/join", async (req, res): Promise<void> => {
   const user = await currentUser(req);
   if (!requirePlayer(user, res)) return;
-  const parsed = StartMatchBody.safeParse(req.body);
+  const parsed = JoinRoomBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Select a valid game." });
+    res.status(400).json({ error: "Choose a valid game and room." });
     return;
   }
-  const game = games.find((entry) => entry.id === parsed.data.gameId);
-  if (!game) {
-    res.status(400).json({ error: "That game is not available." });
+  const game = games.find((item) => item.id === parsed.data.gameId);
+  const option = roomOptions.find((item) => item.id === parsed.data.optionId);
+  if (!game || !option) {
+    res.status(400).json({ error: "That room is not available." });
     return;
   }
-  const match = await updateCashStore((store) => {
-    const currentUserRecord = store.users.find((entry) => entry.id === user.id);
-    if (
-      !currentUserRecord ||
-      currentUserRecord.wallet.depositBalance < DEPOSIT_ENTRY ||
-      currentUserRecord.wallet.bonusBalance < BONUS_ENTRY
-    ) {
-      return null;
+  const result = await updateCashStore((store) => {
+    const currentUserRecord = store.users.find((item) => item.id === user.id);
+    if (!currentUserRecord) return { kind: "missing-user" as const };
+    const existing = store.rooms.find(
+      (room) =>
+        room.status !== "finished" &&
+        room.players.some((player) => player.userId === user.id),
+    );
+    if (existing) return { kind: "existing" as const, room: existing };
+    if (currentUserRecord.wallet.totalMoney < option.entryFee) {
+      return { kind: "low-balance" as const };
     }
-    currentUserRecord.wallet.depositBalance -= DEPOSIT_ENTRY;
-    currentUserRecord.wallet.bonusBalance -= BONUS_ENTRY;
-    const created: MatchRecord = {
-      id: randomUUID(),
+    let room = store.rooms
+      .filter(
+        (item) =>
+          item.status === "waiting" &&
+          item.gameId === game.id &&
+          item.optionId === option.id &&
+          item.players.length < item.requiredSlots,
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    let createdNew = false;
+    if (!room) {
+      createdNew = true;
+      room = {
+        id: randomUUID(),
+        gameId: game.id,
+        gameName: game.name,
+        optionId: option.id as RoomOptionId,
+        entryFee: option.entryFee,
+        playerCount: option.playerCount,
+        requiredSlots: option.playerCount,
+        prize: option.prize,
+        adminKeeps: option.adminKeeps,
+        status: "waiting",
+        players: [],
+        winnerId: null,
+        winnerName: null,
+        createdAt: new Date().toISOString(),
+      };
+      store.rooms.push(room);
+    }
+    currentUserRecord.wallet.totalMoney = roundMoney(
+      currentUserRecord.wallet.totalMoney - option.entryFee,
+    );
+    room.players.push({
       userId: user.id,
-      gameId: game.id,
-      gameName: game.name,
-      status: "active",
-      entryFee: ENTRY_FEE,
-      prize: WIN_PRIZE,
-      opponentName: OPPONENT_NAMES[Math.floor(Math.random() * OPPONENT_NAMES.length)],
-      createdAt: new Date().toISOString(),
-    };
-    store.matches.push(created);
-    return created;
-  });
-  if (!match) {
-    res.status(400).json({
-      error: "You need at least ₹54 deposit balance and ₹6 bonus balance to enter.",
+      displayName: user.displayName,
+      score: null,
     });
+    if (room.players.length === room.requiredSlots) room.status = "active";
+    return { kind: createdNew ? ("created" as const) : ("joined" as const), room };
+  });
+  if (result.kind === "missing-user") {
+    res.status(401).json({ error: "Sign in to continue." });
     return;
   }
-  const { userId: _userId, ...response } = match;
-  res.status(201).json(StartMatchResponse.parse(response));
+  if (result.kind === "low-balance") {
+    res.status(400).json({ error: "Your Total Money balance does not cover this entry fee." });
+    return;
+  }
+  const response = JoinRoomResponse.parse(createRoomResponse(result.room, user.id));
+  res.status(result.kind === "created" ? 201 : 200).json(response);
 });
 
-router.post("/matches/:matchId/finish", async (req, res): Promise<void> => {
+router.get("/rooms/:roomId", async (req, res): Promise<void> => {
   const user = await currentUser(req);
   if (!requirePlayer(user, res)) return;
-  const params = FinishMatchParams.safeParse(req.params);
-  const body = FinishMatchBody.safeParse(req.body);
-  if (!params.success || !body.success) {
-    res.status(400).json({ error: "Invalid match result." });
+  const params = GetRoomParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid room." });
     return;
   }
-  const match = await updateCashStore((store) => {
-    const current = store.matches.find(
-      (item) => item.id === params.data.matchId && item.userId === user.id,
-    );
-    if (!current) return { kind: "missing" as const };
-    if (current.status !== "active") return { kind: "settled" as const };
-    current.status = body.data.result;
-    store.totalGameRake += PLATFORM_RAKE;
-    if (current.status === "won") {
-      const currentUserRecord = store.users.find((item) => item.id === user.id);
-      if (!currentUserRecord) return { kind: "missing" as const };
-      currentUserRecord.wallet.winningBalance += WIN_PRIZE;
+  const store = await readCashStore();
+  const room = store.rooms.find((item) => item.id === params.data.roomId);
+  if (!room || !room.players.some((player) => player.userId === user.id)) {
+    res.status(404).json({ error: "Room not found." });
+    return;
+  }
+  res.json(GetRoomResponse.parse(createRoomResponse(room, user.id)));
+});
+
+router.post("/rooms/:roomId/leave", async (req, res): Promise<void> => {
+  const user = await currentUser(req);
+  if (!requirePlayer(user, res)) return;
+  const params = LeaveRoomParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid room." });
+    return;
+  }
+  const result = await updateCashStore((store) => {
+    const room = store.rooms.find((item) => item.id === params.data.roomId);
+    if (!room || !room.players.some((player) => player.userId === user.id)) {
+      return "missing" as const;
     }
-    return { kind: "ok" as const, match: current };
+    if (room.status !== "waiting") return "started" as const;
+    const currentUserRecord = store.users.find((item) => item.id === user.id);
+    if (currentUserRecord) {
+      currentUserRecord.wallet.totalMoney = roundMoney(
+        currentUserRecord.wallet.totalMoney + room.entryFee,
+      );
+    }
+    room.players = room.players.filter((player) => player.userId !== user.id);
+    if (room.players.length === 0) {
+      store.rooms = store.rooms.filter((item) => item.id !== room.id);
+    }
+    return "ok" as const;
   });
-  if (match.kind === "missing") {
-    res.status(404).json({ error: "Match not found." });
+  if (result === "started") {
+    res.status(409).json({ error: "This match has already started." });
     return;
   }
-  if (match.kind === "settled") {
-    res.status(409).json({ error: "This match has already been settled." });
+  if (result === "missing") {
+    res.status(404).json({ error: "Waiting room not found." });
     return;
   }
-  const { userId: _userId, ...response } = match.match;
-  res.json(FinishMatchResponse.parse(response));
+  res.json(LeaveRoomResponse.parse({ success: true }));
+});
+
+router.post("/rooms/:roomId/score", async (req, res): Promise<void> => {
+  const user = await currentUser(req);
+  if (!requirePlayer(user, res)) return;
+  const params = SubmitRoomScoreParams.safeParse(req.params);
+  const body = SubmitRoomScoreBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Submit a valid game score." });
+    return;
+  }
+  const result = await updateCashStore((store) => {
+    const room = store.rooms.find((item) => item.id === params.data.roomId);
+    if (!room || !room.players.some((player) => player.userId === user.id)) {
+      return { kind: "missing" as const };
+    }
+    if (room.status !== "active") return { kind: "not-active" as const };
+    const player = room.players.find((item) => item.userId === user.id);
+    if (!player) return { kind: "missing" as const };
+    if (player.score !== null) return { kind: "already-submitted" as const, room };
+    player.score = body.data.score;
+    if (room.players.every((item) => item.score !== null)) {
+      const winner = [...room.players].sort(
+        (a, b) => (b.score ?? 0) - (a.score ?? 0),
+      )[0];
+      if (!winner) return { kind: "missing" as const };
+      room.status = "finished";
+      room.winnerId = winner.userId;
+      room.winnerName = winner.displayName;
+      const winnerRecord = store.users.find((item) => item.id === winner.userId);
+      if (winnerRecord) {
+        winnerRecord.wallet.totalMoney = roundMoney(
+          winnerRecord.wallet.totalMoney + room.prize,
+        );
+      }
+      const revenueKey = ({
+        duo20: "rake20Player2",
+        duo50: "rake50Player2",
+        quad20: "rake20Player4",
+        quad50: "rake50Player4",
+      } as const)[room.optionId];
+      store.revenue[revenueKey] = roundMoney(
+        store.revenue[revenueKey] + room.adminKeeps,
+      );
+    }
+    return { kind: "ok" as const, room };
+  });
+  if (result.kind === "missing") {
+    res.status(404).json({ error: "Room not found." });
+    return;
+  }
+  if (result.kind === "not-active") {
+    res.status(409).json({ error: "This room has not filled all real-player slots yet." });
+    return;
+  }
+  if (result.kind === "already-submitted") {
+    res.status(409).json({ error: "Your score was already submitted." });
+    return;
+  }
+  res.json(
+    SubmitRoomScoreResponse.parse(createRoomResponse(result.room, user.id)),
+  );
 });
 
 router.post("/wallet/deposits", async (req, res): Promise<void> => {
   const user = await currentUser(req);
   if (!requirePlayer(user, res)) return;
   const parsed = CreateDepositBody.safeParse(req.body);
-  if (!parsed.success || !isWholeRupee(parsed.data?.amount ?? 0)) {
-    res.status(400).json({ error: "Enter a whole-rupee amount and valid deposit details." });
+  if (!parsed.success || parsed.data.amount < 50 || parsed.data.amount > 500) {
+    res.status(400).json({ error: "Deposits must be between ₹50 and ₹500." });
+    return;
+  }
+  if (!roundMoneyRange(parsed.data.amount)) {
+    res.status(400).json({ error: "Enter an amount with up to two decimal places." });
     return;
   }
   const screenshot = parsed.data.screenshotDataUrl;
@@ -403,17 +518,20 @@ router.post("/wallet/deposits", async (req, res): Promise<void> => {
     return;
   }
   const transaction = await updateCashStore((store) => {
-    const duplicateUtr = store.transactions.some(
-      (item) => item.type === "deposit" && item.utr === parsed.data.utr.trim(),
-    );
-    if (duplicateUtr) return null;
+    if (
+      store.transactions.some(
+        (item) => item.type === "deposit" && item.utr === parsed.data.utr.trim(),
+      )
+    ) {
+      return null;
+    }
     const created: TransactionRecord = {
       id: randomUUID(),
       userId: user.id,
       userName: user.displayName,
       type: "deposit",
       status: "pending",
-      amount: parsed.data.amount,
+      amount: roundMoney(parsed.data.amount),
       utr: parsed.data.utr.trim(),
       upiId: null,
       screenshotDataUrl: screenshot,
@@ -435,8 +553,12 @@ router.post("/wallet/withdrawals", async (req, res): Promise<void> => {
   const user = await currentUser(req);
   if (!requirePlayer(user, res)) return;
   const parsed = CreateWithdrawalBody.safeParse(req.body);
-  if (!parsed.success || !isWholeRupee(parsed.data?.amount ?? 0)) {
-    res.status(400).json({ error: "Enter a whole-rupee amount and valid UPI ID." });
+  if (!parsed.success || parsed.data.amount < 70 || parsed.data.amount > 1000) {
+    res.status(400).json({ error: "Withdrawals must be between ₹70 and ₹1,000." });
+    return;
+  }
+  if (!roundMoneyRange(parsed.data.amount)) {
+    res.status(400).json({ error: "Enter an amount with up to two decimal places." });
     return;
   }
   const upiId = parsed.data.upiId.trim();
@@ -445,34 +567,33 @@ router.post("/wallet/withdrawals", async (req, res): Promise<void> => {
     return;
   }
   const transaction = await updateCashStore((store) => {
-    const currentUserRecord = store.users.find((entry) => entry.id === user.id);
-    if (
-      !currentUserRecord ||
-      currentUserRecord.wallet.winningBalance < parsed.data.amount
-    ) {
+    const currentUserRecord = store.users.find((item) => item.id === user.id);
+    if (!currentUserRecord || currentUserRecord.wallet.totalMoney < parsed.data.amount) {
       return null;
     }
-    currentUserRecord.wallet.winningBalance -= parsed.data.amount;
-    const tax = Math.round(parsed.data.amount * 0.05);
+    const tax = roundMoney(parsed.data.amount * 0.05);
     const created: TransactionRecord = {
       id: randomUUID(),
       userId: user.id,
       userName: user.displayName,
       type: "withdrawal",
       status: "pending",
-      amount: parsed.data.amount,
+      amount: roundMoney(parsed.data.amount),
       utr: null,
       upiId,
       screenshotDataUrl: null,
       tax,
-      payout: parsed.data.amount - tax,
+      payout: roundMoney(parsed.data.amount - tax),
       createdAt: new Date().toISOString(),
     };
+    currentUserRecord.wallet.totalMoney = roundMoney(
+      currentUserRecord.wallet.totalMoney - created.amount,
+    );
     store.transactions.push(created);
     return created;
   });
   if (!transaction) {
-    res.status(400).json({ error: "Insufficient winning balance." });
+    res.status(400).json({ error: "Insufficient Total Money balance." });
     return;
   }
   res.status(201).json(CreateWithdrawalResponse.parse(transaction));
@@ -485,13 +606,31 @@ router.get("/admin/dashboard", async (req, res): Promise<void> => {
   const pending = store.transactions.filter((item) => item.status === "pending");
   res.json(
     GetAdminDashboardResponse.parse({
-      totalGameRake: store.totalGameRake,
-      totalWithdrawalTaxes: store.totalWithdrawalTaxes,
+      ...store.revenue,
       pendingCount: pending.length,
       deposits: pending.filter((item) => item.type === "deposit"),
       withdrawals: pending.filter((item) => item.type === "withdrawal"),
+      settings: store.settings,
     }),
   );
+});
+
+router.patch("/admin/settings", async (req, res): Promise<void> => {
+  const user = await currentUser(req);
+  if (!requireAdmin(user, res)) return;
+  const parsed = UpdateAdminSettingsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Enter a valid UPI ID and QR image URL." });
+    return;
+  }
+  const settings = await updateCashStore((store) => {
+    store.settings = {
+      adminUpiId: parsed.data.adminUpiId.trim(),
+      adminQrCodeUrl: parsed.data.adminQrCodeUrl.trim(),
+    };
+    return store.settings;
+  });
+  res.json(UpdateAdminSettingsResponse.parse(settings));
 });
 
 router.post(
@@ -517,7 +656,11 @@ router.post(
         body.data.decision === "approve" ? "approved" : "rejected";
       if (transaction.status === "approved") {
         const target = store.users.find((item) => item.id === transaction.userId);
-        if (target) target.wallet.depositBalance += transaction.amount;
+        if (target) {
+          target.wallet.totalMoney = roundMoney(
+            target.wallet.totalMoney + transaction.amount,
+          );
+        }
       }
       return transaction;
     });
@@ -548,7 +691,9 @@ router.post(
       );
       if (!transaction) return null;
       transaction.status = "completed";
-      store.totalWithdrawalTaxes += transaction.tax;
+      store.revenue.totalWithdrawalTax = roundMoney(
+        store.revenue.totalWithdrawalTax + transaction.tax,
+      );
       return transaction;
     });
     if (!result) {

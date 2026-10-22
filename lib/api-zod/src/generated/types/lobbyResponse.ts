@@ -5,9 +5,11 @@
  * API for the Cash Game Lobby prototype.
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminSettings } from './adminSettings';
 import type { Game } from './game';
-import type { Match } from './match';
 import type { Player } from './player';
+import type { Room } from './room';
+import type { RoomOption } from './roomOption';
 import type { Transaction } from './transaction';
 import type { Wallet } from './wallet';
 
@@ -15,6 +17,12 @@ export interface LobbyResponse {
   user: Player;
   wallet: Wallet;
   games: Game[];
+  /**
+     * @minItems 4
+     * @maxItems 4
+     */
+  roomOptions: RoomOption[];
+  activeRoom: Room | null;
   transactions: Transaction[];
-  matches: Match[];
+  settings: AdminSettings;
 }

@@ -21,13 +21,15 @@ import type {
 
 import type {
   AdminDashboard,
+  AdminSettings,
+  AdminSettingsInput,
   DepositDecisionInput,
   DepositInput,
   HealthStatus,
   LobbyResponse,
-  Match,
-  MatchFinishInput,
-  MatchStartInput,
+  Room,
+  RoomJoinInput,
+  RoomScoreInput,
   SessionResponse,
   SignInInput,
   SignUpInput,
@@ -72,7 +74,6 @@ export const getHealthCheckUrl = () => {
 }
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const healthCheck = async ( options?: Parameters<typeof customFetch>[1]): Promise<HealthStatus> => {
@@ -477,7 +478,7 @@ export const getGetLobbyUrl = () => {
 }
 
 /**
- * @summary Get wallet, available games, and recent activity
+ * @summary Get the unified wallet, games, room options, and account activity
  */
 export const getLobby = async ( options?: Parameters<typeof customFetch>[1]): Promise<LobbyResponse> => {
 
@@ -524,7 +525,7 @@ export type GetLobbyQueryError = ErrorType<void>
 
 
 /**
- * @summary Get wallet, available games, and recent activity
+ * @summary Get the unified wallet, games, room options, and account activity
  */
 
 export function useGetLobby<TData = Awaited<ReturnType<typeof getLobby>>, TError = ErrorType<void>>(
@@ -545,18 +546,18 @@ export function useGetLobby<TData = Awaited<ReturnType<typeof getLobby>>, TError
 
 
 
-export const getStartMatchUrl = () => {
+export const getJoinRoomUrl = () => {
 
 
 
 
-  return `/api/matches`
+  return `/api/rooms/join`
 }
 
 /**
- * @summary Pay the entry fee and start a simulated match
+ * @summary Join or create a real-player matchmaking queue
  */
-export const startMatch = async (matchStartInput: MatchStartInput, options?: Parameters<typeof customFetch>[1]): Promise<Match> => {
+export const joinRoom = async (roomJoinInput: RoomJoinInput, options?: Parameters<typeof customFetch>[1]): Promise<Room> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -572,12 +573,12 @@ export const startMatch = async (matchStartInput: MatchStartInput, options?: Par
     }
     return headers;
   };
-return customFetch<Match>(getStartMatchUrl(),
+return customFetch<Room>(getJoinRoomUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(matchStartInput)
+    body: JSON.stringify(roomJoinInput)
   }
 );}
 
@@ -585,13 +586,13 @@ return customFetch<Match>(getStartMatchUrl(),
 
 
 
-export const getStartMatchMutationKey = () => ['startMatch'] as const;
+export const getJoinRoomMutationKey = () => ['joinRoom'] as const;
 
-export const getStartMatchMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startMatch>>, TError,StartMatchMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof startMatch>>, TError,StartMatchMutationVariables, TContext> => {
+export const getJoinRoomMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinRoom>>, TError,JoinRoomMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof joinRoom>>, TError,JoinRoomMutationVariables, TContext> => {
 
-const mutationKey = getStartMatchMutationKey();
+const mutationKey = getJoinRoomMutationKey();
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -601,10 +602,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startMatch>>, StartMatchMutationVariables> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinRoom>>, JoinRoomMutationVariables> = (props) => {
           const {data} = props ?? {};
 
-          return  startMatch(data,requestOptions)
+          return  joinRoom(data,requestOptions)
         }
 
 
@@ -614,38 +615,189 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type StartMatchMutationResult = NonNullable<Awaited<ReturnType<typeof startMatch>>>
-    export type StartMatchMutationBody = BodyType<MatchStartInput>
-    export type StartMatchMutationError = ErrorType<void>
-    export type StartMatchMutationVariables = {data: BodyType<MatchStartInput>}
+    export type JoinRoomMutationResult = NonNullable<Awaited<ReturnType<typeof joinRoom>>>
+    export type JoinRoomMutationBody = BodyType<RoomJoinInput>
+    export type JoinRoomMutationError = ErrorType<void>
+    export type JoinRoomMutationVariables = {data: BodyType<RoomJoinInput>}
 
     /**
- * @summary Pay the entry fee and start a simulated match
+ * @summary Join or create a real-player matchmaking queue
  */
-export const useStartMatch = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startMatch>>, TError,StartMatchMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useJoinRoom = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinRoom>>, TError,JoinRoomMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
-        Awaited<ReturnType<typeof startMatch>>,
+        Awaited<ReturnType<typeof joinRoom>>,
         TError,
-        StartMatchMutationVariables,
+        JoinRoomMutationVariables,
         TContext
       > => {
-      return useMutation(getStartMatchMutationOptions(options));
+      return useMutation(getJoinRoomMutationOptions(options));
     }
 
-export const getFinishMatchUrl = (matchId: string,) => {
+export const getGetRoomUrl = (roomId: string,) => {
 
 
 
 
-  return `/api/matches/${matchId}/finish`
+  return `/api/rooms/${roomId}`
 }
 
 /**
- * @summary Record the simulated match result and settle the prize
+ * @summary Get queue or match status
  */
-export const finishMatch = async (matchId: string,
-    matchFinishInput: MatchFinishInput, options?: Parameters<typeof customFetch>[1]): Promise<Match> => {
+export const getRoom = async (roomId: string, options?: Parameters<typeof customFetch>[1]): Promise<Room> => {
+
+  return customFetch<Room>(getGetRoomUrl(roomId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRoomQueryKey = (roomId: string,) => {
+    return [
+    `/api/rooms/${roomId}`
+    ] as const;
+    }
+
+
+export const getGetRoomQueryOptions = <TData = Awaited<ReturnType<typeof getRoom>>, TError = ErrorType<void>>(roomId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRoomQueryKey(roomId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRoom>>> = ({ signal }) => getRoom(roomId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: roomId !== null && roomId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRoomQueryResult = NonNullable<Awaited<ReturnType<typeof getRoom>>>
+export type GetRoomQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get queue or match status
+ */
+
+export function useGetRoom<TData = Awaited<ReturnType<typeof getRoom>>, TError = ErrorType<void>>(
+ roomId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRoomQueryOptions(roomId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getLeaveRoomUrl = (roomId: string,) => {
+
+
+
+
+  return `/api/rooms/${roomId}/leave`
+}
+
+/**
+ * @summary Leave a waiting queue and refund its entry fee
+ */
+export const leaveRoom = async (roomId: string, options?: Parameters<typeof customFetch>[1]): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getLeaveRoomUrl(roomId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getLeaveRoomMutationKey = () => ['leaveRoom'] as const;
+
+export const getLeaveRoomMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leaveRoom>>, TError,LeaveRoomMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof leaveRoom>>, TError,LeaveRoomMutationVariables, TContext> => {
+
+const mutationKey = getLeaveRoomMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof leaveRoom>>, LeaveRoomMutationVariables> = (props) => {
+          const {roomId} = props ?? {};
+
+          return  leaveRoom(roomId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LeaveRoomMutationResult = NonNullable<Awaited<ReturnType<typeof leaveRoom>>>
+
+    export type LeaveRoomMutationError = ErrorType<void>
+    export type LeaveRoomMutationVariables = {roomId: string}
+
+    /**
+ * @summary Leave a waiting queue and refund its entry fee
+ */
+export const useLeaveRoom = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leaveRoom>>, TError,LeaveRoomMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof leaveRoom>>,
+        TError,
+        LeaveRoomMutationVariables,
+        TContext
+      > => {
+      return useMutation(getLeaveRoomMutationOptions(options));
+    }
+
+export const getSubmitRoomScoreUrl = (roomId: string,) => {
+
+
+
+
+  return `/api/rooms/${roomId}/score`
+}
+
+/**
+ * @summary Submit a completed game score
+ */
+export const submitRoomScore = async (roomId: string,
+    roomScoreInput: RoomScoreInput, options?: Parameters<typeof customFetch>[1]): Promise<Room> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -661,12 +813,12 @@ export const finishMatch = async (matchId: string,
     }
     return headers;
   };
-return customFetch<Match>(getFinishMatchUrl(matchId),
+return customFetch<Room>(getSubmitRoomScoreUrl(roomId),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(matchFinishInput)
+    body: JSON.stringify(roomScoreInput)
   }
 );}
 
@@ -674,13 +826,13 @@ return customFetch<Match>(getFinishMatchUrl(matchId),
 
 
 
-export const getFinishMatchMutationKey = () => ['finishMatch'] as const;
+export const getSubmitRoomScoreMutationKey = () => ['submitRoomScore'] as const;
 
-export const getFinishMatchMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finishMatch>>, TError,FinishMatchMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof finishMatch>>, TError,FinishMatchMutationVariables, TContext> => {
+export const getSubmitRoomScoreMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitRoomScore>>, TError,SubmitRoomScoreMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitRoomScore>>, TError,SubmitRoomScoreMutationVariables, TContext> => {
 
-const mutationKey = getFinishMatchMutationKey();
+const mutationKey = getSubmitRoomScoreMutationKey();
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -690,10 +842,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof finishMatch>>, FinishMatchMutationVariables> = (props) => {
-          const {matchId,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitRoomScore>>, SubmitRoomScoreMutationVariables> = (props) => {
+          const {roomId,data} = props ?? {};
 
-          return  finishMatch(matchId,data,requestOptions)
+          return  submitRoomScore(roomId,data,requestOptions)
         }
 
 
@@ -703,23 +855,23 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type FinishMatchMutationResult = NonNullable<Awaited<ReturnType<typeof finishMatch>>>
-    export type FinishMatchMutationBody = BodyType<MatchFinishInput>
-    export type FinishMatchMutationError = ErrorType<void>
-    export type FinishMatchMutationVariables = {matchId: string;data: BodyType<MatchFinishInput>}
+    export type SubmitRoomScoreMutationResult = NonNullable<Awaited<ReturnType<typeof submitRoomScore>>>
+    export type SubmitRoomScoreMutationBody = BodyType<RoomScoreInput>
+    export type SubmitRoomScoreMutationError = ErrorType<void>
+    export type SubmitRoomScoreMutationVariables = {roomId: string;data: BodyType<RoomScoreInput>}
 
     /**
- * @summary Record the simulated match result and settle the prize
+ * @summary Submit a completed game score
  */
-export const useFinishMatch = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finishMatch>>, TError,FinishMatchMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useSubmitRoomScore = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitRoomScore>>, TError,SubmitRoomScoreMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
-        Awaited<ReturnType<typeof finishMatch>>,
+        Awaited<ReturnType<typeof submitRoomScore>>,
         TError,
-        FinishMatchMutationVariables,
+        SubmitRoomScoreMutationVariables,
         TContext
       > => {
-      return useMutation(getFinishMatchMutationOptions(options));
+      return useMutation(getSubmitRoomScoreMutationOptions(options));
     }
 
 export const getCreateDepositUrl = () => {
@@ -907,7 +1059,7 @@ export const getGetAdminDashboardUrl = () => {
 }
 
 /**
- * @summary Get operations statistics and pending requests
+ * @summary Get revenue streams, system settings, and pending requests
  */
 export const getAdminDashboard = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminDashboard> => {
 
@@ -954,7 +1106,7 @@ export type GetAdminDashboardQueryError = ErrorType<void>
 
 
 /**
- * @summary Get operations statistics and pending requests
+ * @summary Get revenue streams, system settings, and pending requests
  */
 
 export function useGetAdminDashboard<TData = Awaited<ReturnType<typeof getAdminDashboard>>, TError = ErrorType<void>>(
@@ -974,6 +1126,94 @@ export function useGetAdminDashboard<TData = Awaited<ReturnType<typeof getAdminD
 
 
 
+
+export const getUpdateAdminSettingsUrl = () => {
+
+
+
+
+  return `/api/admin/settings`
+}
+
+/**
+ * @summary Update the public deposit UPI details and QR image URL
+ */
+export const updateAdminSettings = async (adminSettingsInput: AdminSettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminSettings> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminSettings>(getUpdateAdminSettingsUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(adminSettingsInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateAdminSettingsMutationKey = () => ['updateAdminSettings'] as const;
+
+export const getUpdateAdminSettingsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdminSettings>>, TError,UpdateAdminSettingsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAdminSettings>>, TError,UpdateAdminSettingsMutationVariables, TContext> => {
+
+const mutationKey = getUpdateAdminSettingsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAdminSettings>>, UpdateAdminSettingsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateAdminSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAdminSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateAdminSettings>>>
+    export type UpdateAdminSettingsMutationBody = BodyType<AdminSettingsInput>
+    export type UpdateAdminSettingsMutationError = ErrorType<void>
+    export type UpdateAdminSettingsMutationVariables = {data: BodyType<AdminSettingsInput>}
+
+    /**
+ * @summary Update the public deposit UPI details and QR image URL
+ */
+export const useUpdateAdminSettings = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdminSettings>>, TError,UpdateAdminSettingsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAdminSettings>>,
+        TError,
+        UpdateAdminSettingsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateAdminSettingsMutationOptions(options));
+    }
 
 export const getDecideDepositUrl = (transactionId: string,) => {
 
