@@ -1,12 +1,12 @@
 {
   "name": "multi-game-cash-lobby",
   "version": "1.0.0",
-  "description":" ",
-  "main": "index.js",
+  "private": true,
   "scripts": {
-   "start" : "node index.js"
+    "build": "pnpm --filter @workspace/api-server run build",
+    "start": "pnpm --filter @workspace/api-server run start"
   },
   "dependencies": {
-    "express" : "^4.19.2"
+    "express": "^4.19.2"
   }
 }
