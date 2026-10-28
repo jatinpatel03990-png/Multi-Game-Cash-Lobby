@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @workspace/api-server run build",
-    "start": "pnpm --filter @workspace/api-server run start"
+    "build": "pnpm --filter @workspace/cash-game-lobby run build"
   },
   "dependencies": {
     "express": "^4.19.2"

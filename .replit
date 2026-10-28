@@ -1,12 +1,9 @@
 modules = ["nodejs-24"]
 
 [deployment]
-router = "application"
-deploymentTarget = "autoscale"
-
-[deployment.postBuild]
-args = ["pnpm", "store", "prune"]
-env = { "CI" = "true" }
+deploymentTarget = "static"
+build = "pnpm run build"
+outputDir = "artifacts/cash-game-lobby/dist/public"
 
 [workflows]
 runButton = "Project"
